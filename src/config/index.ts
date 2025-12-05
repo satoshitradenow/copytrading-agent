@@ -1,139 +1,109 @@
-/**
- * Configuration module for the copy trading agent.
- * Loads and validates environment variables with sensible defaults.
- */
+import dotenv from "dotenv";
+dotenv.config();
 
-import { toFloat } from "../utils/math.js";
+export type HyperliquidEnvironment = "main" | "testnet";
 
-/** Hyperliquid network environment */
-export type HyperliquidEnvironment = "mainnet" | "testnet";
-
-/**
- * Risk management parameters for copy trading.
- */
 export interface RiskConfig {
-  /** 
-   * Leverage multiplier when copying positions.
-   * - 1.0 = mirror leader's exact leverage ratio
-   * - 0.5 = use half the leader's leverage
-   * - 2.0 = use 2x the leader's leverage
-   * 
-   * Example: If leader uses 5x leverage and copyRatio=0.5, follower uses 2.5x leverage.
-   * This scales positions proportionally to follower's account size.
-   */
+  minPositionUsd: number;
   copyRatio: number;
-  /** Maximum leverage allowed for follower positions (hard cap) */
   maxLeverage: number;
-  /** Maximum notional USD value for any single follower position (hard cap) */
   maxNotionalUsd: number;
-  /** Maximum slippage in basis points (e.g., 25 = 0.25%) */
-  maxSlippageBps: number;
-  /** When true, invert leader direction (long->short, short->long) */
   inverse: boolean;
+  maxSlippageBps: number;
 }
 
-/**
- * Complete configuration for the copy trading agent.
- */
 export interface CopyTradingConfig {
-  /** Hyperliquid network to connect to */
   environment: HyperliquidEnvironment;
-  /** Ethereum address of the leader account to copy */
-  leaderAddress: string;
-  /** Private key of the follower account (hex format with 0x prefix) */
+  leaderAddress: `0x${string}`;
   followerPrivateKey: `0x${string}`;
-  /** Optional vault address if trading through a Hyperliquid vault */
-  followerVaultAddress?: `0x${string}`;
-  /** Risk management parameters */
-  risk: RiskConfig;
-  /** Interval in milliseconds for periodic full state reconciliation */
+  // ALWAYS present, but may be undefined if you want to use the follower account address
+  followerVaultAddress: `0x${string}` | undefined;
+  syncIntervalMs: number;
   reconciliationIntervalMs: number;
-  /** Interval in milliseconds for refreshing follower account state */
   refreshAccountIntervalMs: number;
-  /** Whether to aggregate fills by time in WebSocket subscriptions */
   websocketAggregateFills: boolean;
+  risk: RiskConfig;
 }
 
 /**
- * Requires an environment variable to be set, throws if missing.
- * @param key - Environment variable name
- * @returns The environment variable value
- * @throws {Error} If the environment variable is not set
+ * Normalize any env string to "main" or "testnet".
+ * Never throws on unknown values – defaults to "main".
  */
-function requireEnv(key: string): string {
-  const value = process.env[key];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${key}`);
-  }
-  return value;
+function normalizeEnvironment(raw: string | undefined): HyperliquidEnvironment {
+  if (!raw) return "main";
+
+  const v = raw.toLowerCase().trim();
+  if (v === "testnet") return "testnet";
+
+  // Treat anything else as mainnet (production)
+  return "main";
 }
 
-/**
- * Parses an optional numeric environment variable with a fallback.
- * @param key - Environment variable name
- * @param fallback - Default value if not set
- * @returns The parsed number or fallback
- * @throws {Error} If the value is set but not a valid number
- */
-function optionalNumberEnv(key: string, fallback: number): number {
-  const raw = process.env[key];
-  if (!raw) {
-    return fallback;
-  }
-  const parsed = toFloat(raw);
-  if (Number.isNaN(parsed)) {
-    throw new Error(`Invalid numeric value for ${key}: ${raw}`);
-  }
-  return parsed;
-}
-
-/**
- * Parses an optional boolean environment variable with a fallback.
- * Accepts: "1", "true", "yes", "on" (case-insensitive) for true.
- * @param key - Environment variable name
- * @param fallback - Default value if not set
- * @returns The parsed boolean or fallback
- */
-function optionalBooleanEnv(key: string, fallback: boolean): boolean {
-  const raw = process.env[key];
-  if (!raw) {
-    return fallback;
-  }
-  return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
-}
-
-/**
- * Loads and validates configuration from environment variables.
- * @returns Complete validated configuration
- * @throws {Error} If required variables are missing or invalid
- */
 export function loadConfig(): CopyTradingConfig {
-  const environment =
-    (process.env.HYPERLIQUID_ENVIRONMENT as HyperliquidEnvironment | undefined) ?? "mainnet";
-  if (environment !== "mainnet" && environment !== "testnet") {
-    throw new Error(`Unsupported Hyperliquid environment: ${environment}`);
+  const environment = normalizeEnvironment(process.env.HYPERLIQUID_ENVIRONMENT);
+
+  const leaderAddress = process.env.LEADER_ADDRESS as `0x${string}`;
+  const followerPrivateKey = process.env.FOLLOWER_PRIVATE_KEY as `0x${string}`;
+  const followerVaultAddress = process.env.FOLLOWER_VAULT_ADDRESS as
+    | `0x${string}`
+    | undefined;
+
+  if (!leaderAddress) {
+    throw new Error("LEADER_ADDRESS is required");
+  }
+  if (!followerPrivateKey) {
+    throw new Error("FOLLOWER_PRIVATE_KEY is required");
   }
 
-  const followerPrivateKey = requireEnv("FOLLOWER_PRIVATE_KEY") as `0x${string}`;
-  const followerVaultAddress = process.env.FOLLOWER_VAULT_ADDRESS as `0x${string}` | undefined;
-  if (followerVaultAddress && followerVaultAddress.length !== 42) {
-    throw new Error("FOLLOWER_VAULT_ADDRESS must be a 42-character hex string");
-  }
+  // ==== Risk config ====
+  const minPositionUsd = Number(process.env.MIN_POSITION_USD ?? "40"); // raise to 40 to avoid micro-orders
+  const copyRatio = Number(process.env.COPY_RATIO ?? "1");
+  const maxLeverage = Number(process.env.MAX_LEVERAGE ?? "25");
+  const maxNotionalUsd = Number(process.env.MAX_NOTIONAL_USD ?? "1000000");
+  const inverse = (process.env.INVERSE_COPY ?? "false") === "true";
+  const maxSlippageBps = Number(
+    process.env.MAX_SLIPPAGE_BPS ??
+      process.env.SLIPPAGE_BPS ??
+      "50"
+  );
 
-  return {
-    environment,
-    leaderAddress: requireEnv("LEADER_ADDRESS"),
-    followerPrivateKey,
-    ...(followerVaultAddress ? { followerVaultAddress } : {}),
-    risk: {
-      copyRatio: optionalNumberEnv("COPY_RATIO", 1),
-      maxLeverage: optionalNumberEnv("MAX_LEVERAGE", 10),
-      maxNotionalUsd: optionalNumberEnv("MAX_NOTIONAL_USD", 250_000),
-      maxSlippageBps: optionalNumberEnv("MAX_SLIPPAGE_BPS", 25),
-      inverse: optionalBooleanEnv("INVERSE", false),
-    },
-    reconciliationIntervalMs: optionalNumberEnv("RECONCILIATION_INTERVAL_MS", 60_000),
-    refreshAccountIntervalMs: optionalNumberEnv("REFRESH_ACCOUNT_INTERVAL_MS", 5_000),
-    websocketAggregateFills: optionalBooleanEnv("AGGREGATE_FILLS", true),
+  const risk: RiskConfig = {
+    minPositionUsd,
+    copyRatio,
+    maxLeverage,
+    maxNotionalUsd,
+    inverse,
+    maxSlippageBps,
   };
+
+  // ==== Timings / misc ====
+  const syncIntervalMs = Number(process.env.SYNC_INTERVAL_MS ?? "60000");
+  const reconciliationIntervalMs = Number(
+    process.env.RECONCILIATION_INTERVAL_MS ?? String(syncIntervalMs)
+  );
+  const refreshAccountIntervalMs = Number(
+    process.env.REFRESH_ACCOUNT_INTERVAL_MS ?? "300000"
+  );
+  const websocketAggregateFills =
+    (process.env.WEBSOCKET_AGGREGATE_FILLS ?? "true") === "true";
+
+  const config: CopyTradingConfig = {
+    environment,
+    leaderAddress,
+    followerPrivateKey,
+    followerVaultAddress,
+    syncIntervalMs,
+    reconciliationIntervalMs,
+    refreshAccountIntervalMs,
+    websocketAggregateFills,
+    risk,
+  };
+
+  // Safety logs – you'll see these on Render startup.
+  console.log("[CONFIG] Environment:", environment);
+  console.log("[CONFIG] Leader:", leaderAddress);
+  console.log("[CONFIG] Vault:", followerVaultAddress);
+  console.log("[CONFIG] Risk:", risk);
+
+  return config;
 }
