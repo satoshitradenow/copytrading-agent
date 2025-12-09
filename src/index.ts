@@ -121,3 +121,21 @@ async function main() {
 }
 
 void main();
+
+// ==== HARD KILL syncWithLeader (no-op copy-only mode) ====
+// Any calls to TradeExecutor.syncWithLeader (periodic sync / drift correction)
+// will now do nothing. Copy trading still works because that's handled by
+// separate methods that respond to leader fills.
+
+(TradeExecutor as any).prototype.syncWithLeader = async function () {
+  try {
+    if (this.logger && typeof this.logger.info === "function") {
+      this.logger.info({
+        message: "syncWithLeader disabled (no-op, copy-only mode, no drift rebalancing)",
+      });
+    }
+  } catch {
+    // ignore logging problems
+  }
+  return;
+};
