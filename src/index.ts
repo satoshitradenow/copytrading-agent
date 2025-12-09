@@ -139,3 +139,20 @@ void main();
   }
   return;
 };
+
+// ==== REFINED PATCH: Disable only rebalancing, not new trade copies ====
+const originalSyncWithLeader = TradeExecutor.prototype.syncWithLeader;
+
+(TradeExecutor as any).prototype.syncWithLeader = async function () {
+  const isRebalanceCall = this.someInternalRebalanceFlag || false;
+
+  if (isRebalanceCall) {
+    if (this.logger && typeof this.logger.info === "function") {
+      this.logger.info({ message: "Rebalancing no-op: ignoring rebalancing syncWithLeader call" });
+    }
+    return; // Ignore rebalancing calls
+  }
+
+  // For actual new trade copy calls, run the original function
+  return originalSyncWithLeader.apply(this, arguments);
+};
