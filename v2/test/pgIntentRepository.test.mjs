@@ -3,10 +3,14 @@ import assert from 'node:assert/strict';
 import {PgIntentRepository} from '../src/pgIntentRepository.mjs';
 const VAULT='0x1111111111111111111111111111111111111111';
 const T=1800000000000;
+const WRITER='17fa2a6a-c4c5-47f4-b232-a11234567890';
+const OWNER={vaultAddress:VAULT,writerId:WRITER,fencingToken:'1'};
+const grantLease=pool=>{pool.db.leases.set(VAULT,{vault_address:VAULT,writer_id:WRITER,fencing_token:'1',expires_at:T+15000});};
 const source=(x={})=>({mode:'SHADOW_ONLY',vaultAddress:VAULT,fillKey:'t:42',coin:'BTC',side:'buy',size:'0.02',netBefore:'0',netAfter:'0.02',...x});
 const evt=(type,rest={})=>({type,atMs:T,...rest});
+const receipt=p=>({mode:'SHADOW_ONLY',allowed:true,vaultAddress:VAULT,coin:'BTC',requiresReduceOnly:false,intentId:p.intentId});
 function makePool(){
- const db={intents:new Map(),events:[],commits:0,rollbacks:0,failOn:null};
+ const db={intents:new Map(),events:[],leases:new Map(),time:T,commits:0,rollbacks:0,failOn:null};
  const rows=x=>JSON.parse(JSON.stringify(x));
  const pool={db,connect:async()=>{
   let stage=null;
@@ -17,6 +21,16 @@ function makePool(){
    if(sql==='ROLLBACK'){stage=null;db.rollbacks++;return{rowCount:0,rows:[]};}
    if(!stage)throw Error('SQL outside transaction');
    if(db.failOn && sql.includes(db.failOn))throw Error('simulated PostgreSQL failure');
+   if(sql.includes('FROM v2_vault_writer_leases')&&sql.includes('db_now_ms')){
+     const [vault,writer,token]=params,r=db.leases.get(vault);
+     const ok=r&&r.writer_id===writer&&r.fencing_token===String(token)&&r.expires_at>db.time;
+     return {rowCount:ok?1:0,rows:ok?[{...r,db_now_ms:db.time}]:[]};
+   }
+   if(sql.startsWith('SELECT intent_id FROM v2_execution_intents')&&sql.includes('intent_id<>$2')){
+     const [vault,id,statuses]=params;
+     const matches=[...stage.intents.values()].filter(x=>x.vault_address===vault&&x.intent_id!==id&&statuses.includes(x.state.status));
+     return{rowCount:matches.length,rows:matches.slice(0,1)};
+   }
    if(sql.startsWith('INSERT INTO v2_execution_intents')){
     const [id,vault,fillKey,clid,raw]=params;
     for(const other of stage.intents.values())if(other.vault_address===vault&&other.fill_key===fillKey)return{rowCount:0,rows:[]};
@@ -72,7 +86,7 @@ test('PostgreSQL rejects conflicting same source fill under its unique key',asyn
 });
 test('transition state and its audit event commit together',async()=>{
  const pool=makePool(),repo=new PgIntentRepository(pool),p=await repo.propose(source());
- const x=await repo.transition(p.intentId,evt('RISK_APPROVED',{receipt:{mode:'SHADOW_ONLY',allowed:true,vaultAddress:VAULT,coin:'BTC',requiresReduceOnly:false}}));
+ const x=await repo.transition(p.intentId,evt('RISK_APPROVED',{receipt:receipt(p)}));
  assert.equal(x.status,'APPROVED');assert.equal(pool.db.events.length,2);
  assert.equal((await repo.get(p.intentId)).status,'APPROVED');
 });
@@ -85,20 +99,73 @@ test('failed event insert rolls back associated intent status update',async()=>{
 });
 test('unknown submission status survives restart and blocks repeat submission',async()=>{
  const pool=makePool(),repo=new PgIntentRepository(pool),p=await repo.propose(source());
- await repo.transition(p.intentId,evt('RISK_APPROVED',{receipt:{mode:'SHADOW_ONLY',allowed:true,vaultAddress:VAULT,coin:'BTC',requiresReduceOnly:false}}));
- await repo.transition(p.intentId,evt('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T}));
+ grantLease(pool);
+ await repo.transition(p.intentId,evt('RISK_APPROVED',{receipt:receipt(p)}));
+ await repo.beginSubmission(p.intentId,evt('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T}),OWNER);
  await repo.transition(p.intentId,evt('SUBMISSION_UNCERTAIN'));
  const afterRestart=new PgIntentRepository(pool);
  assert.equal((await afterRestart.get(p.intentId)).status,'UNKNOWN');
  assert.equal((await afterRestart.unresolvedForVault(VAULT)).length,1);
- await assert.rejects(afterRestart.transition(p.intentId,evt('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T})),/forbidden/);
+ await assert.rejects(afterRestart.beginSubmission(p.intentId,evt('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T}),OWNER),/forbidden/);
 });
 test('PostgreSQL repository does not append event twice for duplicate fill',async()=>{
  const pool=makePool(),repo=new PgIntentRepository(pool),p=await repo.propose(source());
- await repo.transition(p.intentId,evt('RISK_APPROVED',{receipt:{mode:'SHADOW_ONLY',allowed:true,vaultAddress:VAULT,coin:'BTC',requiresReduceOnly:false}}));
- await repo.transition(p.intentId,evt('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T}));
+ grantLease(pool);
+ await repo.transition(p.intentId,evt('RISK_APPROVED',{receipt:receipt(p)}));
+ await repo.beginSubmission(p.intentId,evt('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T}),OWNER);
  await repo.transition(p.intentId,evt('FILL_CONFIRMED',{fillId:'tid1',size:'0.01'}));
  const before=pool.db.events.length;
  await repo.transition(p.intentId,evt('FILL_CONFIRMED',{fillId:'tid1',size:'0.01'}));
  assert.equal(pool.db.events.length,before);assert.equal((await repo.get(p.intentId)).filledSize,'0.01');
+});
+
+
+test('general transition cannot mark a submission started without ownership',async()=>{
+ const pool=makePool(),repo=new PgIntentRepository(pool),p=await repo.propose(source());
+ await repo.transition(p.intentId,evt('RISK_APPROVED',{receipt:receipt(p)}));
+ await assert.rejects(repo.transition(p.intentId,evt('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T})),/requires beginSubmission/);
+ assert.equal((await repo.get(p.intentId)).status,'APPROVED');
+});
+test('fenced submission requires active lease and exact writer/token',async()=>{
+ const pool=makePool(),repo=new PgIntentRepository(pool),p=await repo.propose(source());
+ await repo.transition(p.intentId,evt('RISK_APPROVED',{receipt:receipt(p)}));
+ const event=evt('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T});
+ await assert.rejects(repo.beginSubmission(p.intentId,event,OWNER),/Lease lost/);
+ grantLease(pool);
+ await assert.rejects(repo.beginSubmission(p.intentId,event,{...OWNER,fencingToken:'2'}),/Lease lost/);
+ await assert.rejects(repo.beginSubmission(p.intentId,event,{...OWNER,writerId:'bad-writer'}),/writer UUID/);
+ await assert.rejects(repo.beginSubmission(p.intentId,event,{...OWNER,vaultAddress:'0x2222222222222222222222222222222222222222'}),/Lease lost/);
+ assert.equal((await repo.beginSubmission(p.intentId,event,OWNER)).status,'SUBMITTING');
+});
+test('expired PostgreSQL lease refuses submission even with approved intent',async()=>{
+ const pool=makePool(),repo=new PgIntentRepository(pool),p=await repo.propose(source());
+ grantLease(pool);pool.db.time=T+16000;
+ await repo.transition(p.intentId,evt('RISK_APPROVED',{receipt:receipt(p)}));
+ await assert.rejects(repo.beginSubmission(p.intentId,evt('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T}),OWNER),/Lease lost/);
+ assert.equal((await repo.get(p.intentId)).status,'APPROVED');
+});
+test('DB clock rejects fabricated recent timestamps and stale approvals',async()=>{
+ const pool=makePool(),repo=new PgIntentRepository(pool),p=await repo.propose(source());
+ grantLease(pool);await repo.transition(p.intentId,evt('RISK_APPROVED',{receipt:receipt(p)}));
+ pool.db.time+=2001;
+ await assert.rejects(repo.beginSubmission(p.intentId,evt('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T+2001}),OWNER),/stale against PostgreSQL clock/);
+ const valid=evt('SUBMISSION_STARTED',{atMs:T+2001,clientOrderId:p.clientOrderId,riskRecheckedAtMs:T+2001});
+ assert.equal((await repo.beginSubmission(p.intentId,valid,OWNER)).status,'SUBMITTING');
+});
+test('a prior unresolved order for same vault prevents starting another',async()=>{
+ const pool=makePool(),repo=new PgIntentRepository(pool),first=await repo.propose(source());
+ grantLease(pool);
+ await repo.transition(first.intentId,evt('RISK_APPROVED',{receipt:receipt(first)}));
+ await repo.beginSubmission(first.intentId,evt('SUBMISSION_STARTED',{clientOrderId:first.clientOrderId,riskRecheckedAtMs:T}),OWNER);
+ const second=await repo.propose(source({fillKey:'t:43',netBefore:'0.02',netAfter:'0.04'}));
+ await repo.transition(second.intentId,evt('RISK_APPROVED',{receipt:receipt(second)}));
+ await assert.rejects(repo.beginSubmission(second.intentId,evt('SUBMISSION_STARTED',{clientOrderId:second.clientOrderId,riskRecheckedAtMs:T}),OWNER),/Another unresolved vault order/);
+ assert.equal((await repo.get(second.intentId)).status,'APPROVED');
+});
+test('durable submit transition rolls back if audit insert fails',async()=>{
+ const pool=makePool(),repo=new PgIntentRepository(pool),p=await repo.propose(source());
+ grantLease(pool);await repo.transition(p.intentId,evt('RISK_APPROVED',{receipt:receipt(p)}));
+ pool.db.failOn='INSERT INTO v2_execution_events';
+ await assert.rejects(repo.beginSubmission(p.intentId,evt('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T}),OWNER),/simulated/);
+ assert.equal((await repo.get(p.intentId)).status,'APPROVED');
 });

@@ -4,6 +4,7 @@
  * Actual execution requires an independent on-exchange confirmation pipeline.
  */
 import {validateAddress} from './hyperliquidRead.mjs';
+import {validateIntentSpec} from './intentLedger.mjs';
 import {sizeUnits,moneyUnits,formatUnits} from './ledger.mjs';
 
 const SIZE_SCALE=100000000n, MONEY_SCALE=1000000n;
@@ -41,6 +42,7 @@ function parsePolicy(policy) {
  */
 export function assessShadowVaultRisk(intent,snapshot,policy,nowMs){
   if(!intent || intent.mode!=='SHADOW_ONLY')throw Error('Only SHADOW_ONLY intents supported');
+  const spec=validateIntentSpec(intent);
   if(!snapshot || typeof snapshot!=='object')throw Error('Vault state required');
   validateAddress(snapshot.vaultAddress);
   if(!POSITIVE_INT(nowMs)||!POSITIVE_INT(snapshot.asOfMs)||snapshot.asOfMs>nowMs)throw Error('Invalid snapshot clock');
@@ -68,6 +70,7 @@ export function assessShadowVaultRisk(intent,snapshot,policy,nowMs){
   if(signed===null||after-before!==signed)throw Error('Intent size, side and post-state inconsistent');
   const observed=positions.get(intent.coin)??0n;
   const failures=[];
+  if(validateAddress(snapshot.vaultAddress)!==spec.vaultAddress) failures.push('VAULT_ADDRESS_MISMATCH');
   if(observed!==before)failures.push('VAULT_POSITION_MISMATCH');
   if(nowMs-snapshot.asOfMs>limits.maxAge)failures.push('STALE_VAULT_SNAPSHOT');
   const mark=marks.get(intent.coin);
@@ -89,7 +92,7 @@ export function assessShadowVaultRisk(intent,snapshot,policy,nowMs){
     if(newMarketNotional*10000n>equity*limits.market)failures.push('MARKET_CONCENTRATION');
     if(nextGross*10000n>equity*limits.gross)failures.push('GROSS_LEVERAGE');
   }
-  return Object.freeze({mode:'SHADOW_ONLY',allowed:failures.length===0,failures,requiresReduceOnly:isPureReduction,
+  return Object.freeze({mode:'SHADOW_ONLY',allowed:failures.length===0,failures,requiresReduceOnly:isPureReduction,intentId:spec.intentId,
     vaultAddress:validateAddress(snapshot.vaultAddress),coin:intent.coin,
     orderNotionalUsd:formatUnits(orderNotional,MONEY_SCALE),
     grossBeforeUsd:formatUnits(priorGross,MONEY_SCALE),

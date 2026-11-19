@@ -61,3 +61,11 @@ source remains necessary for very-high-frequency accounts or long outages.
 - Both JSONL and PostgreSQL shadow-source readers now default to a conservative 500-result split threshold, rather than treating fewer than 2,000 returned fills as necessarily complete. Oversized responses are recursively split instead of being silently accepted.
 - Two new replay tests pass (121 local tests total). GitHub Actions result for this commit should be checked separately.
 - Hyperliquid's general 500-element/block guidance means returned count alone is **not proof** that all fills are recoverable. True production completeness remains an explicit blocker; no live orders are enabled.
+
+
+## Atomic lease-guarded submission boundary
+
+- General PostgreSQL `transition()` can no longer start submissions without checking vault writer ownership.
+- New `beginSubmission()` checks the active lease, fence, independent PostgreSQL clock freshness, and other in-flight intents under one serializable DB transaction before appending the `SUBMITTING` event.
+- Risk approval receipts now bind to the **exact intent ID**, not merely the vault/coin, eliminating cross-order approval reuse. Vault snapshot identity is checked too.
+- The code is still shadow-only. Tests use a SQL mock; no independent PostgreSQL service, agent signer or exchange execution has been activated.

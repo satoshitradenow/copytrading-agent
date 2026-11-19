@@ -5,7 +5,7 @@ const V='0x1111111111111111111111111111111111111111';
 const t=1_800_000_000_000;
 const policy={maxGrossLeverageBps:20000,maxMarketNotionalBps:10000,maxOrderNotionalUsd:'2500',maxSnapshotAgeMs:10000};
 const snap=(overrides={})=>({vaultAddress:V,accountValueUsd:'5000',asOfMs:t,positions:{BTC:'0',ETH:'0'},marks:{BTC:'50000',ETH:'2000'},...overrides});
-const intent=(o={})=>({mode:'SHADOW_ONLY',coin:'BTC',side:'buy',size:'0.01',netBefore:'0',netAfter:'0.01',...o});
+const intent=(o={})=>({mode:'SHADOW_ONLY',vaultAddress:V,fillKey:'test:a1',coin:'BTC',side:'buy',size:'0.01',netBefore:'0',netAfter:'0.01',...o});
 const check=(i=intent(),s=snap(),p=policy,clock=t+2000)=>assessShadowVaultRisk(i,s,p,clock);
 
 test('approved small entry is shadow-allowed without submitting anything',()=>{
@@ -62,4 +62,14 @@ test('unrelated allMids spot and HIP-3 price symbols do not block a valid valida
  const s=snap({marks:{BTC:'50000',ETH:'2000','@1':'0.0000000001','xyz:XYZ100':'900.25'}});
  const r=check(intent(),s);
  assert.equal(r.allowed,true);
+});
+
+
+test('risk receipt cryptographically binds to exact intent and rejects wrong vault snapshots',()=>{
+ const receipt=check();
+ const altered=check(intent({fillKey:'test:a2'}));
+ assert.notEqual(receipt.intentId,altered.intentId);
+ const wrong=check(intent(),snap({vaultAddress:'0x2222222222222222222222222222222222222222'}));
+ assert.equal(wrong.allowed,false);
+ assert.ok(wrong.failures.includes('VAULT_ADDRESS_MISMATCH'));
 });

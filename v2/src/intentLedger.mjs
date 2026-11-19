@@ -55,6 +55,7 @@ export function reduceIntent(state,event){
     case 'RISK_APPROVED':
       allow('DRAFT');
       if(event.receipt?.mode!=='SHADOW_ONLY'||event.receipt?.allowed!==true||
+         event.receipt.intentId!==st.intentId ||
          validateAddress(event.receipt.vaultAddress)!==st.vaultAddress||event.receipt.coin!==st.coin||
          typeof event.receipt.requiresReduceOnly!=='boolean')fail('risk receipt disagrees with intent');
       st.status='APPROVED';st.requiresReduceOnly=event.receipt.requiresReduceOnly;st.approvedAtMs=event.atMs;break;

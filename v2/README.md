@@ -166,3 +166,17 @@ An additional pure helper deduplicates matching exchange fill IDs, rejects confl
 ## Conservative Hyperliquid historical fill pagination
 
 The reader now treats **500 results** as a conservative saturation threshold by default and recursively divides any bounded window returning 500 **or more** fills. Previously an unexpectedly oversized page failed or a sub-2,000 response could have been accepted as complete. This change acknowledges a tension in Hyperliquid's documentation: the dedicated `userFillsByTime` description states up to 2,000 fills, while the general Info pagination guidance mentions 500 elements or distinct blocks. The smaller threshold provides additional protection against truncation, but **does not prove completeness** when the exchange truncates by block count, changes response semantics, or has already aged out older fills. No live copier should assume full source history from this count test alone; archival/sequence verification may still be needed. Two regression tests cover oversized responses, bringing the local test suite to 121. [Official Info API](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint).
+
+
+## Fenced submission preparation and order-bound risk receipt (2026-11-19)
+
+The v2 shadow intent repository now **rejects `SUBMISSION_STARTED` through the generic `transition()` path**. The only permitted pre-submission state change is `beginSubmission(intentId,event,{vaultAddress,writerId,fencingToken})`, which uses ONE serializable PostgreSQL transaction to:
+
+1. Lock the exact non-expired vault lease for the process UUID + fencing token.
+2. Compare the risk-rechecked and submission-event timestamps to the **PostgreSQL server clock**, with a 1-second maximum check age.
+3. Reject any other unresolved in-flight exchange intent for the same vault.
+4. Lock the intended row, check it belongs to the vault, verify its risk approval is at most 10 seconds old, transition to `SUBMITTING`, and commit the event and state atomically.
+
+A separate fix prevents cross-order approval replay: `assessShadowVaultRisk()` now returns an `intentId` derived from the exact validated order specification, and `RISK_APPROVED` requires that exact `intentId`. It also fails closed on a mismatch between the intent vault and the snapshot vault. Added 8 local regression tests; existing GitHub Actions workflow will test this against the full suite.
+
+**This is only shadow-only ledger preparation.** It never sends an order; it does not create exchange-side fencing or make an already-in-flight HTTP request safe. The real PostgreSQL integration test and live testnet authorization are separate, still-pending gates.

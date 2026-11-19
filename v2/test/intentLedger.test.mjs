@@ -5,7 +5,7 @@ const V='0x1111111111111111111111111111111111111111';
 const T=1800000000000;
 const spec=(x={})=>({mode:'SHADOW_ONLY',vaultAddress:V,fillKey:'trader:a-fill-1',coin:'BTC',side:'buy',size:'0.01',netBefore:'0',netAfter:'0.01',...x});
 const ev=(type,x={})=>({type,atMs:T,...x});
-const risk=(x={})=>({mode:'SHADOW_ONLY',allowed:true,vaultAddress:V,coin:'BTC',requiresReduceOnly:false,...x});
+const risk=(x={})=>({mode:'SHADOW_ONLY',allowed:true,vaultAddress:V,coin:'BTC',requiresReduceOnly:false,intentId:validateIntentSpec(spec()).intentId,...x});
 const make=()=>{const journal=new MemoryEventJournal();const ledger=new IntentLedger(journal);const p=ledger.propose(spec());return{journal,ledger,p};};
 const approve=(l,p)=>l.transition(p.intentId,ev('RISK_APPROVED',{receipt:risk()}));
 const send=(l,p)=>l.transition(p.intentId,ev('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T}));
@@ -113,4 +113,12 @@ test('duplicate unknown reports cannot create a retry action',()=>{
  ledger.transition(p.intentId,ev('SUBMISSION_UNCERTAIN'));const n=journal.readAll().length;
  assert.equal(ledger.transition(p.intentId,ev('SUBMISSION_UNCERTAIN')).status,'UNKNOWN');
  assert.equal(journal.readAll().length,n);
+});
+
+
+test('risk receipt for different intent cannot authorize same-vault same-market order',()=>{
+ const {ledger,p}=make();
+ const other=validateIntentSpec(spec({fillKey:'trader:a-fill-2',size:'0.1',netAfter:'0.1'}));
+ assert.throws(()=>ledger.transition(p.intentId,ev('RISK_APPROVED',{receipt:risk({intentId:other.intentId})})),/risk receipt/);
+ assert.equal(ledger.get(p.intentId).status,'DRAFT');
 });
