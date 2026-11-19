@@ -1,0 +1,8 @@
+{
+  "name": "hyperliquid-vault-copy-shadow-v2",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {"test": "node --test test/*.test.mjs", "shadow": "node src/shadow.mjs"}
+}

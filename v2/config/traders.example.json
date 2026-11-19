@@ -1,0 +1,11 @@
+{
+  "mode": "SHADOW_ONLY",
+  "vaultAddress": null,
+  "note": "Three public candidate addresses recovered from the conversation; not all five final trader choices could be verified. All sources disabled pending verification. Never put private keys here.",
+  "allowedCoins": ["BTC", "ETH"],
+  "traders": [
+    {"address": "0x936cf4fb95c30ce83f658b5bbb247e4bb381bb0f", "allocationUsd": "1000", "maxVirtualLeverage": 2, "enabled": false},
+    {"address": "0x49e96e255ba418d08e66c35b588e2f2f3766e1d0", "allocationUsd": "1000", "maxVirtualLeverage": 2, "enabled": false},
+    {"address": "0xb83de012dba672c76a7dbbbf3e459cb59d7d6e36", "allocationUsd": "1000", "maxVirtualLeverage": 2, "enabled": false}
+  ]
+}
