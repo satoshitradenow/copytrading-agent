@@ -140,7 +140,7 @@ export class CapturedSource {
   }
 
   /** Call from exactly one worker. Concurrent calls fail closed. */
-  async captureUntil({ readPage, throughTimeMs, pageLimit = 2000, overlapMs = 120000, maxRequests = 1500 }) {
+  async captureUntil({ readPage, throughTimeMs, pageLimit = 500, overlapMs = 120000, maxRequests = 1500 }) {
     if (this.inCapture) throw new Error('Concurrent capture blocked; single writer required');
     this.inCapture = true;
     try {
@@ -161,11 +161,14 @@ export class CapturedSource {
       if (++requests > maxRequests) throw new Error('Capture request budget exceeded; no checkpoint advanced');
       const rows = await readPage(this.trader, start, end);
       if (!Array.isArray(rows)) throw new Error('Invalid fill page; no checkpoint advanced');
-      if (rows.length > pageLimit) throw new Error('Fill page larger than protocol cap');
+      // This threshold is deliberately conservative because API pagination may
+      // be capped by distinct blocks as well as number of fills. Oversized
+      // responses require recursive splitting, not a completeness claim.
+      if (!Array.isArray(rows)) throw new Error('Malformed fill page');
       // A full page may be truncated; split until each page is guaranteed sub-cap.
-      // A single millisecond with 2000+ trades is unrecoverable without another API.
-      if (rows.length === pageLimit) {
-        if (start === end) throw new Error('2000+ fills at one timestamp; fail closed, require alternate history');
+      // A single saturated millisecond cannot be split without alternate API/history.
+      if (rows.length >= pageLimit) {
+        if (start === end) throw new Error('Saturated fills at one timestamp; fail closed, require alternate history');
         const mid = start + Math.floor((end - start) / 2);
         ranges.push([mid + 1, end], [start, mid]);
         continue;

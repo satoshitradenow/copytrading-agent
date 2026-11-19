@@ -101,3 +101,11 @@ test('a previously captured overlap anchor disappearing from API halts before cu
  await assert.rejects(store.captureUntil({throughTimeMs:250,readPage:async()=>[fill(2,240)]}),/retention\/data gap/);
  assert.equal(pool.db.cursor.get(A),200);assert.equal(pool.db.fills.size,1);
 });
+test('oversized response is treated as saturated and recursively split, not accepted as complete',async()=>{
+  const rows=[fill(1,101),fill(2,160),fill(3,190)];
+  const calls=[];
+  const batch=await fetchCompleteFillRange({trader:A,startTimeMs:100,endTimeMs:200,pageLimit:2,readPage:async(_,s,e)=>{
+    calls.push([s,e]);return rows.filter(x=>x.time>=s&&x.time<=e);
+  }});
+  assert.equal(batch.rows.length,3);assert.ok(calls.length>1);
+});

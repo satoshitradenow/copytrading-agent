@@ -20,7 +20,7 @@ async function transactional(pool,fn){
  finally{c.release();}
 }
 /** Retains proof of API completeness or refuses to return a partial interval. */
-export async function fetchCompleteFillRange({trader,readPage,startTimeMs,endTimeMs,pageLimit=2000,maxRequests=1500}){
+export async function fetchCompleteFillRange({trader,readPage,startTimeMs,endTimeMs,pageLimit=500,maxRequests=1500}){
  const v=validateAddress(trader);
  integer(startTimeMs,'startTimeMs');integer(endTimeMs,'endTimeMs');
  if(endTimeMs<startTimeMs||typeof readPage!=='function')throw Error('Invalid bounded source query');
@@ -30,8 +30,8 @@ export async function fetchCompleteFillRange({trader,readPage,startTimeMs,endTim
  while(ranges.length){
   const [start,end]=ranges.pop();if(++requests>maxRequests)throw Error('Source fill request budget exceeded; incomplete history');
   const rows=await readPage(v,start,end);
-  if(!Array.isArray(rows)||rows.length>pageLimit)throw Error('Invalid or over-cap fill page; no checkpoint');
-  if(rows.length===pageLimit){
+  if(!Array.isArray(rows))throw Error('Invalid fill page; no checkpoint');
+  if(rows.length>=pageLimit){
    if(start===end)throw Error('Unrecoverable same-millisecond fill-page saturation; no checkpoint');
    const mid=start+Math.floor((end-start)/2);
    ranges.push([mid+1,end],[start,mid]);continue;
@@ -72,7 +72,7 @@ export class PgCapturedSource {
   this.initialized=true;
  }
  snapshot(){return{mode:'READ_ONLY_PG',trader:this.trader,fromTimeMs:this.fromTimeMs,throughTimeMs:this.throughTimeMs};}
- async captureUntil({readPage,throughTimeMs,pageLimit=2000,maxRequests=1500}){
+ async captureUntil({readPage,throughTimeMs,pageLimit=500,maxRequests=1500}){
   if(this.inCapture)throw Error('Concurrent capture blocked for this source');
   this.inCapture=true;
   try{

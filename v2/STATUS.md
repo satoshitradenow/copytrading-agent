@@ -54,3 +54,10 @@ source remains necessary for very-high-frequency accounts or long outages.
 - `src/orderEvidence.mjs` validates read-only `orderStatus` identity and status for a vault/cloid and tallies observed user fills conservatively. `unknownOid` is never a retry signal.
 - No `/exchange` calls or execution states changed; the evidence API cannot prove complete history and cannot clear an unresolved intent by itself.
 - 119 local mocked/regular tests pass; actual PG and live vault tests are still pending.
+
+
+## Conservative source pagination (2026-11-19 continuation)
+
+- Both JSONL and PostgreSQL shadow-source readers now default to a conservative 500-result split threshold, rather than treating fewer than 2,000 returned fills as necessarily complete. Oversized responses are recursively split instead of being silently accepted.
+- Two new replay tests pass (121 local tests total). GitHub Actions result for this commit should be checked separately.
+- Hyperliquid's general 500-element/block guidance means returned count alone is **not proof** that all fills are recoverable. True production completeness remains an explicit blocker; no live orders are enabled.

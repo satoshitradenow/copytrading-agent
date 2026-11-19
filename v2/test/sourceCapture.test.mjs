@@ -165,3 +165,10 @@ test('fills sharing one millisecond follow numeric transaction IDs, not lexicogr
   ]});
   assert.equal(c.auditPositionContinuity().verifiedFromFlatStart,true);
 });
+test('JSONL capture also splits a response exceeding the conservative page threshold',async()=>{
+  const opts=mk();const sourceCapture=new CapturedSource(opts);
+  const rows=[raw(1,base+1),raw(2,base+3),raw(3,base+5)];
+  const result=await sourceCapture.captureUntil({throughTimeMs:base+9,pageLimit:2,readPage:apiFrom(rows,[])});
+  assert.equal(result.accepted,3);
+  assert.equal(sourceCapture.snapshot().throughTimeMs,base+9);
+});
