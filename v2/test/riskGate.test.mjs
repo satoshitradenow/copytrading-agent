@@ -57,3 +57,9 @@ test('exchange position adapter maps known signed sizes, rejects duplicate malfo
  assert.throws(()=>normalizeVaultPositions([{position:{coin:'BTC',szi:'0'}},{position:{coin:'BTC',szi:'0'}}]),/Duplicate/);
  assert.throws(()=>normalizeVaultPositions([{position:{coin:'BTC',szi:'1e2'}}]),/decimal/);
 });
+
+test('unrelated allMids spot and HIP-3 price symbols do not block a valid validator-perp trade',()=>{
+ const s=snap({marks:{BTC:'50000',ETH:'2000','@1':'0.0000000001','xyz:XYZ100':'900.25'}});
+ const r=check(intent(),s);
+ assert.equal(r.allowed,true);
+});

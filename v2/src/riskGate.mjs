@@ -48,9 +48,18 @@ export function assessShadowVaultRisk(intent,snapshot,policy,nowMs){
   if(typeof intent.coin!=='string'||!/^[A-Z0-9:_-]{1,32}$/.test(intent.coin))throw Error('Invalid proposed market');
   if(!snapshot.marks || typeof snapshot.marks!=='object')throw Error('Trusted mark-price map required');
   if(!Object.hasOwn(snapshot.marks,intent.coin))throw Error('Market missing trusted price');
-  const marks=new Map(Object.entries(snapshot.marks).map(([coin,px])=>[coin,moneyUnits(px)]));
-  for(const [coin,mark] of marks)if(mark<=0n || !/^[A-Z0-9:_-]{1,32}$/.test(coin))throw Error('Invalid market mark');
+  // allMids includes unrelated spot and HIP-3 identifiers such as @1;
+  // never reject a permitted vault trade because an unused price key is
+  // formatted differently. Validate *only* the target plus open positions.
   const positions=parsePositions(snapshot.positions,snapshot.marks);
+  const requiredMarkets=new Set([intent.coin,...[...positions].filter(([,size])=>size!==0n).map(([coin])=>coin)]);
+  const marks=new Map();
+  for(const coin of requiredMarkets){
+    if(!Object.hasOwn(snapshot.marks,coin))throw Error('Missing required market mark');
+    const px=moneyUnits(snapshot.marks[coin]);
+    if(px<=0n)throw Error('Invalid required market mark');
+    marks.set(coin,px);
+  }
   const equity=moneyUnits(snapshot.accountValueUsd);
   if(equity<=0n)throw Error('Vault account equity must be positive');
   const before=sizeUnits(intent.netBefore),after=sizeUnits(intent.netAfter),quantity=sizeUnits(intent.size);
