@@ -47,3 +47,10 @@ source remains necessary for very-high-frequency accounts or long outages.
 - Added explicitly opt-in `integration/leasePostgres.mjs` that refuses any database except `vault_copy_v2_test` with a separate confirmation variable. Not yet run against a real PG instance.
 - Real exchange requests can outlive database lease expiry. No production writer implementation or signer exists; lease fencing alone does not provide exactly-once exchange execution.
 - No Neon/Render/Vercel state changed and no test migrations executed.
+
+
+## Exchange order evidence (2026-11-19 continuation)
+
+- `src/orderEvidence.mjs` validates read-only `orderStatus` identity and status for a vault/cloid and tallies observed user fills conservatively. `unknownOid` is never a retry signal.
+- No `/exchange` calls or execution states changed; the evidence API cannot prove complete history and cannot clear an unresolved intent by itself.
+- 119 local mocked/regular tests pass; actual PG and live vault tests are still pending.

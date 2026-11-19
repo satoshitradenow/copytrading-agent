@@ -116,3 +116,18 @@ export async function readSourceEquityObservation(traderAddress,options={}) {
     observedAtStartMs,observedAtEndMs,positions:state.assetPositions,
     limitation:'Snapshot is not historical fill-time equity; cannot authorize an order on its own'};
 }
+
+/**
+ * Read-only order status lookup against the VAULT account, not the API agent.
+ * A response of `unknownOid` is NOT evidence that a previous send had no
+ * effect; exchange propagation, retention and network errors may intervene.
+ */
+export async function readVaultOrderStatus(vaultAddress,clientOrderId,options={}) {
+  const vault=validateAddress(vaultAddress);
+  if(typeof clientOrderId!=='string'||!/^0x[0-9a-fA-F]{32}$/.test(clientOrderId))
+    throw Error('16-byte Hyperliquid client order ID required');
+  const result=await info({type:'orderStatus',user:vault,oid:clientOrderId.toLowerCase()},options);
+  if(!result || typeof result!=='object' || Array.isArray(result) ||
+     !['order','unknownOid'].includes(result.status))throw Error('Malformed Hyperliquid order status; fail closed');
+  return result;
+}
