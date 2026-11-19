@@ -61,3 +61,76 @@ GitHub Actions configuration for this branch is at repository root `.github/work
 ## Opt-in development monitor (no trading)
 
 `npm run watch -- config/traders.json START_EPOCH_MS ./local-state` uses a WebSocket `userFills` subscription only to **wake** REST historical capture, plus a 15-second independent polling fallback. REST history is always deduplicated, validated, and checkpointed before it advances. Existing sources remain disabled in the example config. For a **new** journal, the start timestamp must be within the last 9.5 minutes; an existing journal can reuse its original start timestamp if its latest checkpoint is sufficiently recent. Prolonged read gaps beyond 10 minutes halt the process rather than pretending the API retained all older fills. WebSocket snapshots are never treated as executable fills. The worker is read-only and has no order or wallet code. **This local JSONL version must not be deployed on Render's ephemeral disk**; a PostgreSQL-backed, fenced writer remains a production prerequisite.
+
+## Transactional persistence milestone (2026-11-19, development only)
+
+A separate PostgreSQL option is now implemented for **read-only capture** and
+**shadow-order intent accounting**. It is not deployed and has not been tested
+against a provisioned PostgreSQL server. The automated tests use deterministic
+in-memory stand-ins for PostgreSQL transactions; a real PostgreSQL integration
+suite and independently reviewed migrations are still required before production.
+
+- `src/pgSourceCapture.mjs`: bounded Hyperliquid `/info` history, synchronized
+  baseline and cursor, duplicate/conflicting fill detection, rollback on any
+  incomplete response or database fault. Each group of captured fills and its
+  progress cursor are written in one serializable transaction, protected by
+  a per-trader baseline-row lock. Cross-process serializable conflicts cause a
+  fail-closed stop; they are never silently retried.
+- `src/intentLedger.mjs`: pure intent lifecycle with stable client order IDs,
+  event hashes, deterministic replay, duplicate fill defense and no blind retry
+  after an unknown result. Its `SUBMISSION_STARTED` event is only a data-state
+  transition; there is no submitter or signing wallet behind it.
+- `src/pgIntentRepository.mjs`: an independent serializable, row-locked durable
+  intent proposal/transition repository with append-only event rows. This is
+  **not** a usable execution pipeline until the per-vault writer-fencing,
+  live exchange reconciliation, and operator-approval mechanisms are built.
+- `sql/002_execution_ledger.sql`: migration **proposal only**, not applied.
+  It includes a future per-vault writer lease design; code does not yet
+  enforce those leases. Do not infer that a SQL lease alone prevents an old
+  worker's delayed HTTP submission.
+- `src/readOnlyMonitor.mjs`: explicit mainnet/testnet WS selection, aligned
+  with the REST network to prevent accidental cross-network monitoring.
+- `readSourceEquityObservation`: a contemporary public source account snapshot
+  for research. It deliberately does **not** furnish exact source equity for
+  a historical fill or authorize copy sizing.
+
+### Isolated read-only PostgreSQL monitor entry point
+
+Requires an entirely separate database with migrations `001_shadow_ingestion.sql`
+(review first) and `002_execution_ledger.sql` (review first). Do **not** apply
+these migrations to a CoreFraction or other unrelated application database.
+Install Node.js 22+ and dependencies with `npm install` within `v2/`, then set
+`DATABASE_URL` securely using your hosting provider's secrets manager. Never
+check it into Git or send it in chat. The following command is an example, NOT
+an instruction to start trading:
+
+`npm run watch:pg -- ./config/traders.json START_EPOCH_MS`
+
+You must explicitly enable only independently verified public sources in a
+private copy of `traders.example.json`. The original example disables all
+sources. The monitor only performs public `/info` requests and INSERT/UPDATE
+operations into the isolated v2 capture database; it has **no signer or
+exchange-order code**. It requires the same capture baseline on restarts.
+
+### What remains to reach an actual live pilot
+
+1. Confirm the existing vault address and leader-controlled authorization, and
+   verify all five source addresses. Confirm vault market restrictions and
+   maximum order/exchange tick precision via independent live metadata.
+2. Build transactionally fenced *per-vault* allocation and order planning,
+   including unresolved-order blocking and crash recovery. The v2 ledger is
+   separate from live execution and no database end-to-end integration tests
+   have been run yet.
+3. Resolve reliable, audited sizing of trader fills when the source equity is
+   not exactly available at fill time. Never equate a current source account
+   snapshot with historical fill-time equity; exact leverage matching cannot
+   currently be promised.
+4. Authorize and test a dedicated agent for direct vault execution on testnet,
+   and then a separately approved tiny mainnet pilot. Support known order IDs,
+   retries/rejected/partial fills, liquidation prevention, funding, leverage
+   updates, stale data, withdrawals, and operator kill switch.
+5. Independently review financial security and regulatory obligations before
+   any outside depositor money is solicited.
+
+**No real trading, key installation, or production Render/Vercel deployment has
+occurred in this version.** The suspended historical Render worker stays off.

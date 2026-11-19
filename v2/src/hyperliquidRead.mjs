@@ -100,3 +100,19 @@ export async function readVaultRiskInputs(vaultAddress, options={}) {
     disclaimer:'Non-atomic public account/price snapshot; independent execution verification required',
   };
 }
+
+/** Contemporaneous public source equity observation, NOT fill-time equity proof.
+ * Never stamp historical fills with this value or claim exact leverage matching. */
+export async function readSourceEquityObservation(traderAddress,options={}) {
+  const trader=validateAddress(traderAddress);
+  const observedAtStartMs=Date.now();
+  const state=await info({type:'clearinghouseState',user:trader},options);
+  const observedAtEndMs=Date.now();
+  if(observedAtEndMs-observedAtStartMs>10000)throw Error('Source equity observation too slow');
+  const equity=state?.marginSummary?.accountValue;
+  if(typeof equity!=='string'||! /^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(equity)||
+     !Array.isArray(state.assetPositions))throw Error('Malformed source equity observation');
+  return {mode:'READ_ONLY',trader,accountValueUsd:equity,
+    observedAtStartMs,observedAtEndMs,positions:state.assetPositions,
+    limitation:'Snapshot is not historical fill-time equity; cannot authorize an order on its own'};
+}

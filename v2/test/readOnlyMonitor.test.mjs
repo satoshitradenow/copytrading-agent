@@ -81,3 +81,16 @@ test('monitor refuses long unattended gaps instead of assuming old fills are com
   await assert.rejects(monitor.start(),/Capture gap too large/);
   assert.equal(monitor.status().halted,true);
 });
+
+test('testnet WebSocket monitor never listens to mainnet',async()=>{
+ const {ReadOnlyFillMonitor}=await import('../src/readOnlyMonitor.mjs');
+ const trader='0x1111111111111111111111111111111111111111';
+ let url=null;
+ const monitor=new ReadOnlyFillMonitor({trader,network:'testnet',
+  capture:{captureUntil:async()=>({}),snapshot:()=>({fromTimeMs:1800000000000})},
+  readPage:async()=>[],wsFactory:u=>{url=u;return {addEventListener(){},close(){}};},
+  clock:()=>1800000002000,intervalMs:1000,backfillDelayMs:1000});
+ await monitor.start();monitor.stop();
+ assert.equal(url,'wss://api.hyperliquid-testnet.xyz/ws');
+ assert.throws(()=>new ReadOnlyFillMonitor({trader,network:'unsupported',capture:{captureUntil:()=>{}},readPage:async()=>[]}),/network/);
+});

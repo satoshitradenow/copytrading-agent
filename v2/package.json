@@ -11,6 +11,10 @@
     "shadow": "node src/shadow.mjs",
     "inspect": "node src/inspect.mjs",
     "capture": "node src/capture.mjs",
-    "watch": "node src/watch.mjs"
+    "watch": "node src/watch.mjs",
+    "watch:pg": "node src/watchPg.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
   }
 }

@@ -6,11 +6,11 @@
  * This is a development monitor, not the production persistent worker.
  */
 import {validateAddress} from './hyperliquidRead.mjs';
-const WS_URL='wss://api.hyperliquid.xyz/ws';
+const WS_URLS=Object.freeze({mainnet:'wss://api.hyperliquid.xyz/ws',testnet:'wss://api.hyperliquid-testnet.xyz/ws'});
 
 export class ReadOnlyFillMonitor {
   constructor({trader,capture,readPage,wsFactory=url=>new WebSocket(url),clock=()=>Date.now(),
-    intervalMs=15_000,backfillDelayMs=10_000,reconnectMs=2_000,maxBackfillGapMs=600_000,onReport=()=>{},onError=()=>{}}){
+    network='mainnet',intervalMs=15_000,backfillDelayMs=10_000,reconnectMs=2_000,maxBackfillGapMs=600_000,onReport=()=>{},onError=()=>{}}){
     this.trader=validateAddress(trader);
     if(!capture || typeof capture.captureUntil!=='function')throw Error('Source capture required');
     if(typeof readPage!=='function'||typeof wsFactory!=='function')throw Error('Read-only adapters required');
@@ -18,7 +18,8 @@ export class ReadOnlyFillMonitor {
     if(!Number.isSafeInteger(backfillDelayMs)||backfillDelayMs<1000)throw Error('Invalid backfill delay');
     if(!Number.isSafeInteger(reconnectMs)||reconnectMs<1000)throw Error('Invalid reconnect delay');
     if(!Number.isSafeInteger(maxBackfillGapMs)||maxBackfillGapMs<60000)throw Error('Invalid capture gap limit');
-    this.capture=capture;this.readPage=readPage;this.wsFactory=wsFactory;this.clock=clock;
+    if(!Object.hasOwn(WS_URLS,network))throw Error('Invalid source network');
+    this.wsUrl=WS_URLS[network];this.capture=capture;this.readPage=readPage;this.wsFactory=wsFactory;this.clock=clock;
     this.intervalMs=intervalMs;this.backfillDelayMs=backfillDelayMs;this.reconnectMs=reconnectMs;this.maxBackfillGapMs=maxBackfillGapMs;
     this.onReport=onReport;this.onError=onError;
     this.started=false;this.halted=false;this.inFlight=null;this.pending=false;
@@ -37,7 +38,7 @@ export class ReadOnlyFillMonitor {
   #openWebSocket(){
     if(!this.started||this.halted)return;
     let ws;
-    try{ws=this.wsFactory(WS_URL);}catch(e){this.#scheduleReconnect();return;}
+    try{ws=this.wsFactory(this.wsUrl);}catch(e){this.#scheduleReconnect();return;}
     this.ws=ws;
     ws.addEventListener('open',()=>{
       if(!this.started||this.halted)return;

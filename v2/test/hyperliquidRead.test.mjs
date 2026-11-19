@@ -62,3 +62,17 @@ test('read-only risk inputs join real vault position and mark-price responses wi
  assert.equal(result.marks.BTC,'50100.5');
  assert.deepEqual(calls.sort(),['allMids','clearinghouseState']);
 });
+
+test('source equity observation is labeled non-historical and never turned into fill equity',async()=>{
+ const {readSourceEquityObservation}=await import('../src/hyperliquidRead.mjs');
+ const A='0x1111111111111111111111111111111111111111';
+ const fetchImpl=async(_url,args)=>{
+  const req=JSON.parse(args.body);
+  assert.equal(req.type,'clearinghouseState');
+  return{ok:true,json:async()=>({marginSummary:{accountValue:'1234.5'},assetPositions:[]})};
+ };
+ const s=await readSourceEquityObservation(A,{fetchImpl});
+ assert.equal(s.accountValueUsd,'1234.5');assert.equal(s.mode,'READ_ONLY');
+ assert.equal('sourceEquityUsd' in s,false);
+ assert.match(s.limitation,/not historical fill-time/);
+});
