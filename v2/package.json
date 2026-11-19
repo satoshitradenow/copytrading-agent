@@ -12,7 +12,8 @@
     "inspect": "node src/inspect.mjs",
     "capture": "node src/capture.mjs",
     "watch": "node src/watch.mjs",
-    "watch:pg": "node src/watchPg.mjs"
+    "watch:pg": "node src/watchPg.mjs",
+    "test:postgres": "node integration/leasePostgres.mjs"
   },
   "dependencies": {
     "pg": "^8.16.3"

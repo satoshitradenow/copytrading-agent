@@ -146,3 +146,11 @@ response. If that anchor disappears it refuses to advance the checkpoint.
 This safeguards *observable overlap continuity*, not complete historical
 provenance before the initial baseline. Very high-frequency source accounts
 may require a verified independent archival data feed before live copying.
+
+## Vault single-writer lease and isolated database verification
+
+The new `src/pgVaultWriterLease.mjs` provides a **shadow-only** PostgreSQL lease with one UUID writer per process, database-clock expiry, a monotonically increasing fencing token, explicit renewal, and protection against takeovers if an unresolved `SUBMITTING`, `UNKNOWN`, `ACKED`, `PARTIAL`, or `REVIEW_REQUIRED` intent exists. It deliberately rejects simultaneous writers and stale owners. This is defense-in-depth, **not** sufficient by itself for live trading: it cannot revoke an HTTP request already transmitted by an old process; the actual execution adapter must implement external reconciliation and an emergency kill switch.
+
+`npm test` includes the 12 mocked SQL lease tests (107 tests in total as of this commit). A *separate, manual* real-PostgreSQL integration script exists: `npm run test:postgres`. It refuses to run without `V2_INTEGRATION_CONFIRM=YES_ISOLATED_TEST_DATABASE` and a `V2_INTEGRATION_DATABASE_URL` whose database path and the server-reported database name are both exactly `vault_copy_v2_test`. The integration script creates test tables and deletes only its own randomly generated test records, so **never** point it at any production project or a shared database. It has **not** been run against a real PostgreSQL server, since no isolated test database credentials were supplied. No migrations have been applied anywhere.
+
+**Still blocked:** no direct vault signer/agent approval, no execution transport, no real exchange order reconciliation, no full five-trader source verification, no live deployment, and no independently confirmed vault address. The suspended legacy Render worker must stay disabled.

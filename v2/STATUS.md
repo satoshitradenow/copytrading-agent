@@ -39,3 +39,11 @@ PostgreSQL capture now halts if a previously saved fill inside its polling
 overlap is missing from the public history query. This does not prove that
 history preceding the initial verified baseline is complete; an archival
 source remains necessary for very-high-frequency accounts or long outages.
+
+## Writer fencing (2026-11-19 continuation)
+
+- Implemented `src/pgVaultWriterLease.mjs`: fail-closed PostgreSQL ownership, DB-clock TTL, non-reentrant UUID writer, incrementing fencing token, renewal/check/release, and takeover blocked by unresolved in-flight order intents.
+- Added 12 mocked SQL tests (107 local unit tests total). These are **not real PostgreSQL integration results**.
+- Added explicitly opt-in `integration/leasePostgres.mjs` that refuses any database except `vault_copy_v2_test` with a separate confirmation variable. Not yet run against a real PG instance.
+- Real exchange requests can outlive database lease expiry. No production writer implementation or signer exists; lease fencing alone does not provide exactly-once exchange execution.
+- No Neon/Render/Vercel state changed and no test migrations executed.
