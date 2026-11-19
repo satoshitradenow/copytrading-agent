@@ -82,7 +82,20 @@ export class PgCapturedSource {
    const previous=this.throughTimeMs??this.fromTimeMs;
    if(throughTimeMs-previous>this.maxBackfillGapMs)throw Error('Unverified long source history gap; fail closed');
    const start=Math.max(this.fromTimeMs,previous-this.overlapMs);
+   // Retention sentinel: if a fill already persisted within the re-read overlap
+   // disappears from the public API, it may have fallen outside the exchange's
+   // 10,000-most-recent-fill retention window. Halting is safer than declaring
+   // that an incomplete range was captured. This is a continuity check, NOT
+   // proof that no older fill was lost before our first baseline.
+   const anchor=await this.pool.query(`SELECT fill_tid,fill_time_ms FROM v2_source_fills
+     WHERE trader_address=$1 AND fill_time_ms>=$2 AND fill_time_ms<=$3
+     ORDER BY fill_time_ms ASC,fill_tid ASC LIMIT 1`,[this.trader,start,previous]);
    const batch=await fetchCompleteFillRange({trader:this.trader,readPage,startTimeMs:start,endTimeMs:throughTimeMs,pageLimit,maxRequests});
+   if(anchor.rows.length){
+     const old=anchor.rows[0];
+     if(!batch.rows.some(x=>x.fill.fillId.slice(3)===String(old.fill_tid) && x.fill.timeMs===Number(old.fill_time_ms)))
+       throw Error('Stored source fill disappeared from API overlap; retention/data gap, fail closed');
+   }
    // All DB writes, including cursor progress, happen in the same transaction.
    // Locking the baseline row serializes concurrent commits for this trader.
    const saved=await transactional(this.pool,async c=>{

@@ -30,6 +30,11 @@ function mockPool(){
   }};return client;
  },query:async(sql,p=[])=>{
   if(sql.includes('FROM v2_source_cursors')){const c=db.cursor.get(p[0]);return{rowCount:c!==undefined?1:0,rows:c!==undefined?[{through_time_ms:c}]:[]};}
+  if(sql.includes('FROM v2_source_fills')){
+    const candidates=[...db.fills.entries()].filter(([key,row])=>key.startsWith(p[0]+'|')&&row.fill_time_ms>=p[1]&&row.fill_time_ms<=p[2]);
+    candidates.sort((a,b)=>a[1].fill_time_ms-b[1].fill_time_ms);
+    const row=candidates[0];return{rowCount:row?1:0,rows:row?[{fill_tid:row[0].slice(p[0].length+1),fill_time_ms:row[1].fill_time_ms}]:[]};
+  }
   throw Error('unexpected read');
  }};
  return pool;
@@ -88,4 +93,11 @@ test('too-long backfill or an older end time refuses to claim completeness',asyn
  await assert.rejects(store.captureUntil({throughTimeMs:100000,readPage:async()=>[]}),/history gap/);
  await store.captureUntil({throughTimeMs:200,readPage:async()=>[]});
  await assert.rejects(store.captureUntil({throughTimeMs:199,readPage:async()=>[]}),/backward/);
+});
+
+test('a previously captured overlap anchor disappearing from API halts before cursor advance',async()=>{
+ const pool=mockPool(),store=new PgCapturedSource({pool,trader:A,fromTimeMs:100});
+ await store.captureUntil({throughTimeMs:200,readPage:async()=>[fill(1,150)]});
+ await assert.rejects(store.captureUntil({throughTimeMs:250,readPage:async()=>[fill(2,240)]}),/retention\/data gap/);
+ assert.equal(pool.db.cursor.get(A),200);assert.equal(pool.db.fills.size,1);
 });

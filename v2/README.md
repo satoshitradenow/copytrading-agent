@@ -134,3 +134,15 @@ exchange-order code**. It requires the same capture baseline on restarts.
 
 **No real trading, key installation, or production Render/Vercel deployment has
 occurred in this version.** The suspended historical Render worker stays off.
+
+### Exchange history retention safeguard
+
+Hyperliquid `userFillsByTime` has a 2,000-row **response** cap and a separate
+**10,000 most recent fills per source account** retention cap. Recursive time
+range splitting handles the response cap, but it cannot recreate fills already
+outside the 10,000-row retention window. The PostgreSQL capture now compares
+one previously persisted fill inside each polling overlap against the API's
+response. If that anchor disappears it refuses to advance the checkpoint.
+This safeguards *observable overlap continuity*, not complete historical
+provenance before the initial baseline. Very high-frequency source accounts
+may require a verified independent archival data feed before live copying.
