@@ -120,6 +120,16 @@ export class ShadowLedger {
     const k = positionKey(trader, coin);
     const prev = this.virtual.get(k) ?? 0n;
     const prevSource = this.sourcePositions.get(k) ?? 0n;
+    // Hyperliquid supplies the original position BEFORE a fill. If present,
+    // require it to agree with the journaled leader exposure. This prevents
+    // an inherited source position from masquerading as a newly opened trade.
+    // Do not silently seed from a nonzero exchange position at subscription.
+    if (fill.sourceStartPosition !== undefined) {
+      const claimedStart = integerDecimal(fill.sourceStartPosition, SCALE, 'sourceStartPosition');
+      if (claimedStart !== prevSource) {
+        throw new Error('Source pre-fill position mismatches journal baseline; do not copy inherited positions');
+      }
+    }
     // Adds/new entries scale by the source's contemporaneous equity.
     // Reductions are proportional to the follower's ALREADY-OPEN position;
     // otherwise an equity change between entry and exit leaves stranded size.

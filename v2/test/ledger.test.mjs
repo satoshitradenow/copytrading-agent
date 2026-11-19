@@ -157,3 +157,13 @@ test('partial reduction and flip remain proportional after changing source equit
   assert.equal(l.snapshot().net.BTC,'-0.0025');
   assert.equal(l.snapshot().sourcePositions[`${A}|BTC`],'-0.5');
 });
+
+test('explicit sourceStartPosition blocks inherited or out-of-order trade copying',()=>{
+  const l=setup();
+  assert.throws(()=>l.applyFill(fill({sourceStartPosition:'3'})),/mismatches/);
+  assert.equal(l.snapshot().journaledFills,0);
+  l.applyFill(fill({sourceStartPosition:'0'}));
+  assert.throws(()=>l.applyFill(fill({fillId:'out-of-order',sourceStartPosition:'0',side:'sell',size:'1'})),/mismatches/);
+  l.applyFill(fill({fillId:'close',sourceStartPosition:'1',side:'sell',size:'1'}));
+  assert.equal(l.snapshot().net.BTC,'0');
+});

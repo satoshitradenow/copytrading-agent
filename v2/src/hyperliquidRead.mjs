@@ -54,3 +54,15 @@ export async function readRecentSourceFills(traderAddress, options = {}) {
   if (!Array.isArray(rows)) throw new Error('Malformed userFills response');
   return rows;
 }
+
+/** Fetch a bounded raw history interval, without assuming pagination is complete.
+ * The caller MUST detect the 2,000-fill cap and recursively split ranges. */
+export async function readSourceFillsByTime(traderAddress, startTime, endTime, options = {}) {
+  const trader = validateAddress(traderAddress);
+  if (!Number.isSafeInteger(startTime) || startTime < 0 || !Number.isSafeInteger(endTime) || endTime < startTime) {
+    throw new Error('Invalid historical fill time range');
+  }
+  const rows = await info({type:'userFillsByTime',user:trader,startTime,endTime,aggregateByTime:false},options);
+  if (!Array.isArray(rows)) throw new Error('Malformed userFillsByTime response');
+  return rows;
+}

@@ -3,6 +3,13 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "engines": {"node": ">=22"},
-  "scripts": {"test": "node --test test/*.test.mjs", "shadow": "node src/shadow.mjs", "inspect": "node src/inspect.mjs"}
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "shadow": "node src/shadow.mjs",
+    "inspect": "node src/inspect.mjs",
+    "capture": "node src/capture.mjs"
+  }
 }
