@@ -45,3 +45,20 @@ test('bad address and failed HTTP response are not treated as empty accounts',as
   const badFetch=async()=>({ok:false,status:429});
   await assert.rejects(readRecentSourceFills(vault,{fetchImpl:badFetch}),/429/);
 });
+
+test('read-only risk inputs join real vault position and mark-price responses without signing',async()=>{
+ const calls=[];
+ const fetchImpl=async (url,options)=>{
+   assert.equal(url,'https://api.hyperliquid.xyz/info');
+   const req=JSON.parse(options.body);calls.push(req.type);
+   return {ok:true,json:async()=>req.type==='allMids'?{BTC:'50100.5',ETH:'2010'}:
+    {marginSummary:{accountValue:'1500'},assetPositions:[{position:{coin:'BTC',szi:'0.001'}}]}};
+ };
+ const {readVaultRiskInputs}=await import('../src/hyperliquidRead.mjs');
+ const result=await readVaultRiskInputs(vault,{fetchImpl});
+ assert.equal(result.mode,'READ_ONLY');
+ assert.deepEqual(result.positions,{BTC:'0.001'});
+ assert.equal(result.accountValueUsd,'1500');
+ assert.equal(result.marks.BTC,'50100.5');
+ assert.deepEqual(calls.sort(),['allMids','clearinghouseState']);
+});

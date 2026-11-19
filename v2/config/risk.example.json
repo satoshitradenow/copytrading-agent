@@ -1,0 +1,8 @@
+{
+  "mode": "SHADOW_ONLY",
+  "maxGrossLeverageBps": 20000,
+  "maxMarketNotionalBps": 10000,
+  "maxOrderNotionalUsd": "2500",
+  "maxSnapshotAgeMs": 10000,
+  "note": "Prototype conservative caps: 2x gross and 1x notional per market relative to live vault equity. Requires independent live vault snapshot. NOT active trading config."
+}

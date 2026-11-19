@@ -66,3 +66,37 @@ export async function readSourceFillsByTime(traderAddress, startTime, endTime, o
   if (!Array.isArray(rows)) throw new Error('Malformed userFillsByTime response');
   return rows;
 }
+
+/** Read-only inputs for the pure v2 risk gate. The state/price reads are not
+ * atomic on the exchange; future execution must revalidate before submission. */
+export async function readVaultRiskInputs(vaultAddress, options={}) {
+  const address=validateAddress(vaultAddress);
+  const observedAtStart=Date.now();
+  const [state,mids]=await Promise.all([
+    info({type:'clearinghouseState',user:address},options),
+    info({type:'allMids'},options),
+  ]);
+  const observedAtEnd=Date.now();
+  if(observedAtEnd-observedAtStart>10000)throw new Error('Vault risk snapshot fetched too slowly; fail closed');
+  if(!state || !Array.isArray(state.assetPositions)||!state.marginSummary || !mids || typeof mids!=='object'||Array.isArray(mids)) {
+    throw new Error('Malformed live vault state/price response');
+  }
+  const positions={};
+  for(const row of state.assetPositions) {
+    const p=row?.position;
+    if(typeof p?.coin!=='string'||typeof p?.szi!=='string'||Object.hasOwn(positions,p.coin)) {
+      throw new Error('Malformed or duplicate live vault position');
+    }
+    positions[p.coin]=p.szi;
+  }
+  if(typeof state.marginSummary.accountValue!=='string')throw new Error('Missing live vault equity');
+  return {
+    vaultAddress:address,
+    accountValueUsd:state.marginSummary.accountValue,
+    positions,
+    marks:mids,
+    asOfMs:observedAtEnd,
+    mode:'READ_ONLY',
+    disclaimer:'Non-atomic public account/price snapshot; independent execution verification required',
+  };
+}

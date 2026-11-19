@@ -49,3 +49,11 @@ Three candidate addresses recovered from the conversation are in `config/traders
 ## Deployment separation
 
 Legacy Render `copy-agent` is currently suspended. It must remain so. Do not point the root package, existing Render service, Vercel dashboard or real Hyperliquid agent credentials at this new code. When mature, create an isolated new worker with `SHADOW_ONLY` default on.
+
+## New pre-trade SHADOW risk gate
+
+`src/riskGate.mjs` adds a pure, default-deny `assessShadowVaultRisk()` function and a strict adapter for Hyperliquid `clearinghouseState.assetPositions`. It checks actual vault position versus intended `netBefore`, rejects stale vault snapshots, unknown or unpriced existing assets, and enforces explicit order notional, market concentration and gross leverage caps. It recognizes a genuine same-direction **reduction** as such, while treating reversals as new exposure. It returns a proposed decision only: **there is still no exchange execution path**. All inputs must be sourced from fresh independent API observations in a future worker. Example policy: `config/risk.example.json`. An SDK or service that ignores this gate is not safe to deploy.
+
+GitHub Actions configuration for this branch is at repository root `.github/workflows/vault-v2-tests.yml`; it runs the test suite only and does not deploy or access secrets.
+
+`readVaultRiskInputs(vaultAddress)` combines read-only Hyperliquid `clearinghouseState` and `allMids` to supply the gate's normalized positions, mark prices, equity, and an observation timestamp. These are **not atomic** exchange snapshots; an eventual live engine must recheck actual account state immediately before any order. There is still no order submission, API wallet, or deployment.

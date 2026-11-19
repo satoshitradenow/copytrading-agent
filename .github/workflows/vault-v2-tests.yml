@@ -1,0 +1,21 @@
+name: Vault v2 shadow-only tests
+on:
+  push:
+    branches: [vault-v2-design-20261119]
+    paths:
+      - 'v2/**'
+  pull_request:
+    paths:
+      - 'v2/**'
+jobs:
+  test-shadow-only:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+        working-directory: v2
