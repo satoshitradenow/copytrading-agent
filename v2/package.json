@@ -10,6 +10,7 @@
     "test": "node --test test/*.test.mjs",
     "shadow": "node src/shadow.mjs",
     "inspect": "node src/inspect.mjs",
-    "capture": "node src/capture.mjs"
+    "capture": "node src/capture.mjs",
+    "watch": "node src/watch.mjs"
   }
 }
