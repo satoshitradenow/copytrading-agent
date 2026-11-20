@@ -67,7 +67,8 @@ export class PgVaultRecoveryInspector {
    if(lease){
     if(lease.vault_address!==vault||typeof lease.active!=='boolean'||
       !/^[1-9][0-9]*$/.test(String(lease.fencing_token))||
-      !(lease.expires_at instanceof Date||Number.isFinite(Date.parse(lease.expires_at))))
+      !Number.isFinite(lease.expires_at instanceof Date?
+        lease.expires_at.getTime():Date.parse(lease.expires_at)))
       throw Error('Corrupt writer lease; recovery denied');
     reasonOnce(reasons,lease.active?'WRITER_LEASE_ACTIVE_NEEDS_RECONCILIATION':
      'EXPIRED_WRITER_LEASE_NEEDS_RECONCILIATION');
