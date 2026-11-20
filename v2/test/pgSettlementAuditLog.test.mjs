@@ -134,3 +134,45 @@ test('audit rejects non-JSON input rather than silently dropping evidence fields
   /safe JSON/);
  assert.equal(db.logs.length,0);
 });
+
+test('economic fill-path review is versioned in same durable chain, independently verified on read',async()=>{
+ const preview=setup(),{db,pool}=poolFor(preview),repo=new PgSettlementAuditLog(pool);
+ const requestArgs=request(preview,[fullReport(preview)]);
+ const leg=preview.intents[0],row=requestArgs.legReports[0].observedFills[0];
+ Object.assign(row,{px:'50000',fee:'0.2',feeToken:'USDC',closedPnl:'0',
+  startPosition:leg.netBefore,crossed:true});
+ const base=await repo.record(requestArgs);
+ const economic=await repo.recordEconomics(requestArgs);
+ assert.equal(base.report.classification,'CORROBORATED_BUT_NOT_SETTLED');
+ assert.equal(economic.report.classification,'ECONOMIC_PATH_CORROBORATED_BUT_NOT_SETTLED');
+ assert.equal(economic.evidence.auditVariant,'FILL_PATH_ECONOMIC_V1');
+ assert.equal(economic.report.commitAuthorized,false);
+ assert.equal(economic.commitAuthorized,false);
+ assert.equal(db.batch.status,'STAGED');
+ assert.equal(db.logs.length,2);
+ assert.equal(db.logs[1].previous_chain_hash,base.chainHash);
+ assert.equal((await repo.recordEconomics(requestArgs)).idempotent,true);
+ assert.equal(db.logs.length,2);
+ const restored=await new PgSettlementAuditLog(pool).listForReview({
+  batchId:preview.batchId,vaultAddress:VAULT
+ });
+ assert.equal(restored[0].report.classification,'CORROBORATED_BUT_NOT_SETTLED');
+ assert.equal(restored[1].report.classification,'ECONOMIC_PATH_CORROBORATED_BUT_NOT_SETTLED');
+ assert.equal(restored[1].report.economicLegAudits[0].path.economics.observedFeeUsd,'0.2');
+ db.logs[1].audit_report.economicLegAudits[0].path.economics.observedFeeUsd='999';
+ await assert.rejects(repo.listForReview({batchId:preview.batchId,vaultAddress:VAULT}),
+  /Stored settlement report disagrees/);
+});
+test('economics record fails closed when fee or pre-fill position is missing',async()=>{
+ const preview=setup(),{db,pool}=poolFor(preview),repo=new PgSettlementAuditLog(pool);
+ const args=request(preview,[fullReport(preview)]);
+ await assert.rejects(repo.recordEconomics(args),/fill price|price|fee|startPosition/);
+ assert.equal(db.logs.length,0);
+});
+test('unknown audit variant can never be silently interpreted as the older algorithm',async()=>{
+ const preview=setup(),{db,pool}=poolFor(preview),repo=new PgSettlementAuditLog(pool);
+ await repo.record(request(preview));
+ db.logs[0].evidence.auditVariant='FUTURE_UNSUPPORTED';
+ await assert.rejects(repo.listForReview({batchId:preview.batchId,vaultAddress:VAULT}),
+  /Unknown settlement review algorithm version/);
+});
