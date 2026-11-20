@@ -183,7 +183,7 @@ export class PgSettlementAuditLog {
   try{
    // Single consistent PostgreSQL snapshot for batch, hash-chain, and fill
    // identities; never combine an old batch with a new audit log snapshot.
-   await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+   await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
    const found=await client.query(BATCH_SELECT,[id,vault]);
    if(found.rows.length!==1)throw Error('Persisted batch missing or ambiguous; audit refused');
    const preview=persistedPreview(found.rows[0],id,vault);
