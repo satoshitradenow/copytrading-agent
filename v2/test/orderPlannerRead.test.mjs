@@ -11,7 +11,7 @@ const response=(payload)=>async(url,opts)=>{
 test('metadata fetch uses only /info meta and returns observed timestamp',async()=>{
  let seen=false;
  const r=await readMainPerpMetadata({fetchImpl:response(q=>{assert.deepEqual(q,{type:'meta'});seen=true;return META;})});
- assert(seen);assert.equal(r.meta.universe.length,2);assert.equal(r.mode,'READ_ONLY');assert(Number.isSafeInteger(r.observedAtMs));
+ assert(seen);assert.equal(r.network,'mainnet');assert.equal(r.meta.universe.length,2);assert.equal(r.mode,'READ_ONLY');assert(Number.isSafeInteger(r.observedAtMs));
 });
 test('duplicate and invalid metadata listings stop order planning',async()=>{
  await assert.rejects(readMainPerpMetadata({fetchImpl:response(()=>({universe:[META.universe[0],META.universe[0]]}))}),/metadata/);
@@ -23,10 +23,10 @@ test('activeAssetData asks about destination vault and exact market',async()=>{
    return {user:VAULT,coin:'ETH',leverage:{type:'cross',value:3}};
  })});
  assert.equal(obs.value,3);assert.equal(obs.mode,'cross');assert.equal(obs.source,'activeAssetData');
- assert.equal(obs.signingAuthorityVerified,false);assert.equal(obs.vaultAddress,VAULT);
+ assert.equal(obs.network,'mainnet');assert.equal(obs.signingAuthorityVerified,false);assert.equal(obs.vaultAddress,VAULT);
 });
 test('activeAssetData identifies an isolated margin change rather than hiding it',async()=>{
- const r=await readVaultAssetLeverage(VAULT,'BTC',{fetchImpl:response(()=>({leverage:{type:'isolated',value:2,rawUsd:'100'}}))});
+ const r=await readVaultAssetLeverage(VAULT,'BTC',{fetchImpl:response(()=>({user:VAULT,coin:'BTC',leverage:{type:'isolated',value:2,rawUsd:'100'}}))});
  assert.equal(r.mode,'isolated');
 });
 test('activeAssetData will not trust another vault or another market response',async()=>{
@@ -34,7 +34,12 @@ test('activeAssetData will not trust another vault or another market response',a
  await assert.rejects(readVaultAssetLeverage(VAULT,'BTC',{fetchImpl:response(()=>({user:VAULT,coin:'ETH',leverage:{type:'cross',value:2}}))}),/mismatched/);
 });
 test('activeAssetData fails when leverage is missing, invalid or market input unsafe',async()=>{
- await assert.rejects(readVaultAssetLeverage(VAULT,'BTC',{fetchImpl:response(()=>({leverage:{type:'cross',value:0}}))}),/Malformed/);
+ await assert.rejects(readVaultAssetLeverage(VAULT,'BTC',{fetchImpl:response(()=>({user:VAULT,coin:'BTC',leverage:{type:'cross',value:0}}))}),/Malformed/);
  await assert.rejects(readVaultAssetLeverage(VAULT,'BTC',{fetchImpl:response(()=>({}))}),/Malformed/);
  await assert.rejects(readVaultAssetLeverage(VAULT,'@1',{fetchImpl:async()=>{throw Error('should not fetch')}}),/Invalid validator/);
+});
+
+test('activeAssetData missing vault identity is rejected, not silently accepted',async()=>{
+ await assert.rejects(readVaultAssetLeverage(VAULT,'BTC',{fetchImpl:response(()=>({coin:'BTC',leverage:{type:'cross',value:2}}))}),/Malformed/);
+ await assert.rejects(readVaultAssetLeverage(VAULT,'BTC',{fetchImpl:response(()=>({user:VAULT,leverage:{type:'cross',value:2}}))}),/Malformed/);
 });

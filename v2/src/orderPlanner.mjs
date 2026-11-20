@@ -74,7 +74,7 @@ export function boundedPerpPrice({markUsd,szDecimals,side,maxSlippageBps}) {
 }
 
 /** Pure, unsigned order preview. No submission method exists in v2. */
-export function prepareShadowIocOrder({intent,riskReceipt,vaultSnapshot,riskPolicy,meta,markUsd,marketObservedAtMs,nowMs,
+export function prepareShadowIocOrder({intent,riskReceipt,vaultSnapshot,riskPolicy,meta,metaNetwork,markUsd,marketObservedAtMs,nowMs,
   observedLeverage,policy}) {
   const spec=validateIntentSpec(intent);
   if (!riskReceipt || riskReceipt.mode !== 'SHADOW_ONLY' || riskReceipt.allowed !== true ||
@@ -87,6 +87,8 @@ export function prepareShadowIocOrder({intent,riskReceipt,vaultSnapshot,riskPoli
   const expectedLeverage=integer(policy.expectedLeverage,'expectedLeverage',1,25);
   const network=policy.network;
   if (network!=='mainnet' && network!=='testnet')throw Error('Explicit supported network required');
+  if(metaNetwork!==network || vaultSnapshot?.network!==network || observedLeverage?.network!==network)
+    throw Error('Read-only market, vault and leverage observations must match the intended network');
   if (!Number.isSafeInteger(nowMs) || !Number.isSafeInteger(marketObservedAtMs) ||
       nowMs<marketObservedAtMs || nowMs-marketObservedAtMs>maxAge)
     throw Error('Stale or future market/metadata snapshot');

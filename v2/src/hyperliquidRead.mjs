@@ -97,6 +97,7 @@ export async function readVaultRiskInputs(vaultAddress, options={}) {
     marks:mids,
     asOfMs:observedAtEnd,
     mode:'READ_ONLY',
+    network:options.network??'mainnet',
     disclaimer:'Non-atomic public account/price snapshot; independent execution verification required',
   };
 }
@@ -148,7 +149,7 @@ export async function readMainPerpMetadata(options={}) {
       throw Error('Conflicting or invalid main perpetual metadata');
     names.add(a.name);
   }
-  return {mode:'READ_ONLY',meta,observedAtMs,
+  return {mode:'READ_ONLY',network:options.network??'mainnet',meta,observedAtMs,
     limitation:'Metadata is an observation, not proof the exchange state stays unchanged'};
 }
 
@@ -162,11 +163,11 @@ export async function readVaultAssetLeverage(vaultAddress,coin,options={}){
   const observedAtMs=Date.now();
   if(observedAtMs-startedAtMs>10000)throw Error('Active leverage observation too slow; fail closed');
   if(!data||typeof data!=='object'||Array.isArray(data)||
-     data.user && validateAddress(data.user)!==vault ||
-     data.coin && data.coin!==coin ||
+     typeof data.user!=='string' || validateAddress(data.user)!==vault ||
+     data.coin!==coin ||
      !['cross','isolated'].includes(data.leverage?.type) ||
      !Number.isSafeInteger(data.leverage.value)||data.leverage.value<1||data.leverage.value>100)
     throw Error('Malformed or mismatched active asset leverage; fail closed');
   return {mode:data.leverage.type,value:data.leverage.value,asOfMs:observedAtMs,
-    vaultAddress:vault,coin,source:'activeAssetData',signingAuthorityVerified:false};
+    vaultAddress:vault,coin,network:options.network??'mainnet',source:'activeAssetData',signingAuthorityVerified:false};
 }

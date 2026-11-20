@@ -8,14 +8,14 @@ const t=1800000000000;
 const meta={universe:[{name:'BTC',szDecimals:5,maxLeverage:40},{name:'ETH',szDecimals:4,maxLeverage:25}]};
 const intent=(p={})=>({mode:'SHADOW_ONLY',vaultAddress:V,fillKey:'source:1000',coin:'BTC',side:'buy',size:'0.001',netBefore:'0',netAfter:'0.001',...p});
 const prepare=(changes={})=>{
- const {intent:i=intent(),meta:m=meta,mark='50000',at=t,now=t+1000,leverage={mode:'cross',value:2,asOfMs:t},
+ const {intent:i=intent(),meta:m=meta,metaNetwork='mainnet',mark='50000',at=t,now=t+1000,leverage={mode:'cross',value:2,asOfMs:t,network:'mainnet'},
    policy={network:'mainnet',maxSlippageBps:50,maxSnapshotAgeMs:3000,expectedLeverage:2,minNotionalUsd:'10'},receipt,
    vaultSnapshot:vaultState,riskPolicy:riskLimits} = changes;
  const spec=validateIntentSpec(i);
- const snapshot=vaultState??{vaultAddress:V,accountValueUsd:'10000',asOfMs:t,positions:{BTC:spec.netBefore,ETH:'0'},marks:{BTC:mark,ETH:'2000'}};
+ const snapshot=vaultState??{network:'mainnet',vaultAddress:V,accountValueUsd:'10000',asOfMs:t,positions:{BTC:spec.netBefore,ETH:'0'},marks:{BTC:mark,ETH:'2000'}};
  const riskPolicy=riskLimits??{maxGrossLeverageBps:20000,maxMarketNotionalBps:10000,maxOrderNotionalUsd:'5000',maxSnapshotAgeMs:3000};
  const risk=receipt??assessShadowVaultRisk(spec,snapshot,riskPolicy,now);
- return prepareShadowIocOrder({intent:i,riskReceipt:risk,vaultSnapshot:snapshot,riskPolicy,meta:m,
+ return prepareShadowIocOrder({intent:i,riskReceipt:risk,vaultSnapshot:snapshot,riskPolicy,meta:m,metaNetwork,
    markUsd:mark,marketObservedAtMs:at,nowMs:now,observedLeverage:leverage,policy});
 };
 
@@ -60,7 +60,7 @@ test('valid full close requires reduceOnly classification in approval',()=>{
  const forged=assessShadowVaultRisk(i,{vaultAddress:V,accountValueUsd:'10000',asOfMs:t,positions:{BTC:'0.001',ETH:'0'},marks:{BTC:'50000',ETH:'2000'}},{maxGrossLeverageBps:20000,maxMarketNotionalBps:10000,maxOrderNotionalUsd:'5000',maxSnapshotAgeMs:3000},t+1000);
  assert.throws(()=>prepare({intent:i,receipt:{...forged,requiresReduceOnly:false}}),/Risk approval no longer matches/);
  const spec=validateIntentSpec(i);
- const snapshot={vaultAddress:V,accountValueUsd:'10000',asOfMs:t,positions:{BTC:spec.netBefore,ETH:'0'},marks:{BTC:'50000',ETH:'2000'}};
+ const snapshot={network:'mainnet',vaultAddress:V,accountValueUsd:'10000',asOfMs:t,positions:{BTC:spec.netBefore,ETH:'0'},marks:{BTC:'50000',ETH:'2000'}};
  const rp={maxGrossLeverageBps:20000,maxMarketNotionalBps:10000,maxOrderNotionalUsd:'5000',maxSnapshotAgeMs:3000};
  const r=assessShadowVaultRisk(spec,snapshot,rp,t+1000);
  const out=prepare({intent:i,receipt:r});assert.equal(out.requiresReduceOnly,true);assert.equal(out.wireOrderPreview.r,true);
@@ -76,11 +76,11 @@ test('blocked approval cannot be used even if other fields match',()=>{
 test('stale and future timestamp rejected',()=>{
  assert.throws(()=>prepare({now:t+4000}),/Stale|risk approval/);
  assert.throws(()=>prepare({now:t-1}),/Stale|snapshot clock/);
- assert.throws(()=>prepare({leverage:{mode:'cross',value:2,asOfMs:t-10000}}),/[Ll]everage/);
+ assert.throws(()=>prepare({leverage:{mode:'cross',value:2,asOfMs:t-10000,network:'mainnet'}}),/[Ll]everage/);
 });
 test('manual change in cross leverage or margin mode prevents preview',()=>{
- assert.throws(()=>prepare({leverage:{mode:'cross',value:3,asOfMs:t}}),/[Ll]everage/);
- assert.throws(()=>prepare({leverage:{mode:'isolated',value:2,asOfMs:t}}),/[Ll]everage/);
+ assert.throws(()=>prepare({leverage:{mode:'cross',value:3,asOfMs:t,network:'mainnet'}}),/[Ll]everage/);
+ assert.throws(()=>prepare({leverage:{mode:'isolated',value:2,asOfMs:t,network:'mainnet'}}),/[Ll]everage/);
 });
 test('unsupported network, absurd slippage and excessive leverage blocked',()=>{
  const policy={network:'mainnet',maxSlippageBps:50,maxSnapshotAgeMs:3000,expectedLeverage:2,minNotionalUsd:'10'};
@@ -117,14 +117,14 @@ test('IOC price does not exceed configured slippage band',()=>{
 
 test('recomputed current risk blocks a formerly approved order after vault exposure changed',()=>{
  const i=intent();
- const approvedState={vaultAddress:V,accountValueUsd:'10000',asOfMs:t,positions:{BTC:'0',ETH:'0'},marks:{BTC:'50000',ETH:'2000'}};
+ const approvedState={network:'mainnet',vaultAddress:V,accountValueUsd:'10000',asOfMs:t,positions:{BTC:'0',ETH:'0'},marks:{BTC:'50000',ETH:'2000'}};
  const rp={maxGrossLeverageBps:20000,maxMarketNotionalBps:10000,maxOrderNotionalUsd:'5000',maxSnapshotAgeMs:3000};
  const approval=assessShadowVaultRisk(i,approvedState,rp,t+1000);
  const liveState={...approvedState,positions:{BTC:'0.001',ETH:'0'}};
  assert.throws(()=>prepare({receipt:approval,vaultSnapshot:liveState}),/Fresh vault risk check blocked/);
 });
 test('fresh vault mark and unsigned limit mark must agree',()=>{
- const snapshot={vaultAddress:V,accountValueUsd:'10000',asOfMs:t,positions:{BTC:'0',ETH:'0'},marks:{BTC:'49000',ETH:'2000'}};
+ const snapshot={network:'mainnet',vaultAddress:V,accountValueUsd:'10000',asOfMs:t,positions:{BTC:'0',ETH:'0'},marks:{BTC:'49000',ETH:'2000'}};
  assert.throws(()=>prepare({vaultSnapshot:snapshot,mark:'50000'}),/mark price mismatch/);
 });
 test('property: 600 deterministic random legal perp prices never break tick or slippage constraints',()=>{
@@ -155,4 +155,10 @@ test('property: 600 deterministic random legal perp prices never break tick or s
    valid++;
  }
  assert(valid>0 && blocked>0);
+});
+
+test('mainnet/testnet observation mixing fails closed before any order preview',()=>{
+ assert.throws(()=>prepare({metaNetwork:'testnet'}),/network/);
+ assert.throws(()=>prepare({leverage:{mode:'cross',value:2,asOfMs:t,network:'testnet'}}),/network/);
+ assert.throws(()=>prepare({vaultSnapshot:{network:'testnet',vaultAddress:V,accountValueUsd:'10000',asOfMs:t,positions:{BTC:'0'},marks:{BTC:'50000'}}}),/network/);
 });
