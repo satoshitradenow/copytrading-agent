@@ -13,6 +13,7 @@
     "capture": "node src/capture.mjs",
     "watch": "node src/watch.mjs",
     "watch:pg": "node src/watchPg.mjs",
+    "watch:pg:env": "node src/watchPg.mjs --env",
     "test:postgres": "node integration/leasePostgres.mjs",
     "test:postgres:portfolio": "node integration/portfolioPostgres.mjs"
   },
