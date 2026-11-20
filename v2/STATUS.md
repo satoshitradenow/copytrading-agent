@@ -1,3 +1,12 @@
+# ADDITIONAL MILESTONE — 2026-11-20: COST / CHURN PROTECTION
+
+- Pure `economicThrottle.mjs`: blocks copy entries that exceed explicit daily estimated cost, hourly/daily attempt count or market cooldown policies. Canceled and rejected attempts still count; incomplete history and any UNKNOWN/PARTIAL/SUBMITTED prior order halt.
+- Only legitimate reduce-only positions bypass economic quotas. The intent's net-before/after proves reduce-only; a forged IOC `r:true` cannot bypass. Full wire order asset/side/size/price/cloid identity checked.
+- No profitability guarantee, no automatic selection of fee budgets, no signing keys, no trade execution and no live deployment. Requires a future database-backed full prior-attempt history integration.
+- 14 focused test cases added. GitHub CI must independently verify total counts for this exact commit.
+
+---
+
 # NEW MILESTONE — 2026-11-20: SHADOW PORTFOLIO PENDING-BATCH PERSISTENCE
 
 - `v2/src/pgPortfolioBatchRepository.mjs` adds serialized lease-checked **read-only staging** of netted source events and up to two ordered unsigned leg intents. Source virtual positions are NOT automatically marked filled or committed.
