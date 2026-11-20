@@ -315,3 +315,37 @@ not infer funding, leverage liquidations, fees beyond observed fills,
 full account PnL or any missing exchange trade. Test coverage includes
 maker rebates, partial fills, duplicated/conflicting IDs, exact
 fractional notional, missing fee data and cross-order fills.
+
+
+## Linked economic fill path review and durable audit
+
+`src/portfolioFillEconomics.mjs` reconstructs the chronology of the **observed**
+unaggregated fills for a verified Hyperliquid order and compares its
+`startPosition` sequence, signed quantities and resulting position with
+the before/after account observations. It is deliberately conservative:
+out-of-window fills, ambiguous same-millisecond ordering, changed economics
+under a repeated exchange transaction ID, missing fee/PnL/price/startPosition,
+invalid reduce-only behavior and a failed reversal close cannot establish a
+valid path. A complete matching path is labelled
+`ECONOMIC_PATH_CORROBORATED_BUT_NOT_SETTLED`, NEVER `SETTLED`.
+
+`PgSettlementAuditLog.recordEconomics()` now appends this versioned economic
+review to the same content-hashed, per-batch PostgreSQL audit chain as the
+earlier status/position report. It recomputes each review from retained
+evidence when read after restart and detects changed historical fee totals.
+The durable staged batch remains pending until future independent adjudication.
+The disposable PostgreSQL CI exercises both incomplete and apparently
+complete records and verifies no automatic virtual-portfolio promotion.
+
+Hyperliquid officially states that `fee` INCLUDES `builderFee`:
+https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint .
+The module reports builderFee separately for attribution, without subtracting
+it twice. Complete vault PnL additionally needs funding, liquidation and
+other account events not present in individual order fills.
+
+`test/sustainedShadowSimulation.test.mjs` replays 900 **synthetic** fills from
+five traders over BTC and ETH, including repeats, idle intervals and cross-zero
+reversals, with fully deterministic inputs. Test-only full fills are explicitly
+simulated in memory; neither the exchange nor the database is settled by this
+harness. A deterministic stress test is not proof of a real monitored shadow
+run, historical source equity, or profitability.

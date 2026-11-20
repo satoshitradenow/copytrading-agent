@@ -77,3 +77,29 @@ portfolio promotion. No current audit report or fill-accounting summary
 authorizes a transition. A future promotion API needs explicit operator
 authorization, transaction proofs, recovery and adversarial tests.
 This file is a gate, not approval.
+
+
+## New implemented, non-authorizing evidence milestones
+
+- `portfolioFillEconomics.mjs`: distinct observed exchange fill-ID and
+  `startPosition` continuity, per-fill signed size, fees (inclusive of any
+  builder fee as the official API documents), closed PnL and notional;
+  position-drift and reversal-close uncertainty remain operator reviews.
+- `PgSettlementAuditLog.recordEconomics()`: the same chained PostgreSQL
+  audit now records and revalidates economic reports as versioned evidence.
+  This **does not** change a batch to `SETTLED` or touch a trading engine.
+- A deterministic 900-event five-source, two-market synthetic scenario test
+  verifies repeat suppression, reversal splitting and idle non-trading. It is
+  not a production simulation of network latency, liquidation, actual exchange
+  execution or strategy returns.
+- [291-test verified CI](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44696342805)
+  also runs the two disposable PostgreSQL integration scripts.
+
+**Still missing for a functional mainnet copier:** complete and trustworthy
+event/account provenance; all five real approved source wallets; an explicit
+bounded historical source equity sizing policy; independent, operator-approved
+and transactionally atomic per-fill settlement/journal promotion; properly
+authorized testnet-only signing and recovery; emergency exchange cancellation
+and restart failover; sustained monitored read-only operation and external
+security/financial risk review. No permission to arm or fund trading is
+inferred from these tests.

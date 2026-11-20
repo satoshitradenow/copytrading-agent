@@ -1,3 +1,16 @@
+# VERIFIED V2 ECONOMIC SETTLEMENT REVIEW + 5-TRADER STRESS — 2026-11-20
+
+**Implementation:** `cea818ee4ba5e2398a7b4a3cc1d80fc5cb47df00`. **291/291 Node 22 tests passed**, and both disposable PostgreSQL integration scripts passed in [GitHub Actions 44696342805](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44696342805). This verifies the added economic review and the 900-source-fill synthetic stress test; it does NOT prove profitability or production readiness.
+
+- **Fill economics corrected:** Hyperliquid's documented `fee` includes the optional `builderFee`; builderFee is disclosed separately and never added to total fees again. Signed closed PnL less observed fill fees is available as an explicitly partial metric; funding, liquidations and unobserved costs remain excluded. Unsafe u64 order IDs are rejected.
+- **Exact observed fill path:** `portfolioFillEconomics.mjs` checks unaggregated same-OID fills, each `startPosition`, per-fill time, post-trade position, fees, closed PnL, partial/canceled orders and two-step reversals. Same-millisecond fills require an unambiguous position path rather than assuming `tid` ordering. Economic conflicts and missing fill details fail closed. A terminal order status that predates any observed fill no longer corroborates settlement.
+- **Durable review:** `PgSettlementAuditLog.recordEconomics()` writes a versioned, read-only economic review in the **existing** JSONB/chain-hash table. It replays reports on read, detects tampering, handles duplicates idempotently, and locks the staged batch during append. Actual PostgreSQL CI now tests both incomplete and apparently complete economic reports, while confirming the batch **remains STAGED**.
+- **Synthetic sustained replay:** A reproducible offline 900-fill simulation across five synthetic source traders and two markets exercises openings, reductions, position flips, repeated source events and idle cycles. It is NOT an exchange, real-time archive, at-fill equity proof, or long-running live shadow observation.
+- **Hard hold:** no `SETTLED` promotion, signer, API-agent authorization, order placement/cancellation, mainnet funds, deployment or new Render worker. Legacy root bot remains unchanged by this branch.
+- **Remaining gates:** verified final five source addresses, explicit at-fill equity approximation/uncertainty policy, independent exchange history completeness and settlement authority, operator review and fenced atomic portfolio promotion, actual testnet vault permissions and signed execution (only after explicit authorization), emergency exchange cancellation, real sustained read-only shadow operations, independent security review, separately approved mainnet pilot.
+
+---
+
 # VERIFIED PRECISE EXCHANGE FILL ECONOMICS — 2026-11-20
 
 **Verified implementation:** `15f296b5d31ce50ec713d16ce657c41413ef651d`. **269/269 Node 22 tests passed**, and both disposable real PostgreSQL integration scripts passed in [GitHub Actions run 44684159182](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44684159182).
