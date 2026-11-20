@@ -1,3 +1,15 @@
+# VERIFIED SETTLEMENT EVIDENCE JOURNAL — 2026-11-20
+
+**Verified implementation:** `76fe57ab310a8948a353ee2f73edfec6e95c67b0`. **259/259 Node 22 tests passed**, and **both disposable real PostgreSQL integration scripts passed** in [GitHub Actions run 44683708422](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44683708422). Later documentation-only commits require their own CI verification.
+
+- Added review-only `PgSettlementAuditLog.record()` / `listForReview()` and `sql/005_settlement_audits.sql`. Each audit retains evidence and independently recomputed report, stable JSONB digest, and a per-batch SHA-256 hash chain. Duplicate observations do not append twice; evidence/report/hash tampering fails closed.
+- Audit records append under a PostgreSQL batch lock and SERIALIZABLE transaction. Test coverage includes simulated rollback and a real PostgreSQL append/replay/readback. The existing staged batch stays **STAGED**, and subsequent batches remain blocked until a separate independent settlement process is designed and authorized.
+- An order-status timestamp older than the *immediately preceding* vault-position observation now prevents order corroboration, including the second leg of a reversal. Two regression tests added.
+- The evidence chain is **not** externally anchored, and untrusted public exchange snapshots cannot prove complete fill history. There is no settlement promotion, signer, order placement/cancellation, agent authorization, balance transfer, mainnet deployment or funding request. The v2 branch remains shadow-only. Legacy root trading code and Render deployment are unchanged.
+- Next technical gates: authenticated and complete enough execution/fill evidence; an independent, auditable transactionally atomic settlement/partial-fill/fee ledger; exact-at-fill source equity sizing policy; all five approved source addresses; verified vault agent and testnet authority; emergency exchange cancellation; extended shadow runs and external review. **Do not enable mainnet.**
+
+---
+
 # VERIFIED EMERGENCY-STOP BUILD — 2026-11-20
 
 **Commit:** `6ee37157f1c9224348b78b16c39c71d946daa30c`. **251/251 Node 22 tests passed** and **both disposable real PostgreSQL integration scripts passed** in [GitHub Actions run 44681368931](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44681368931).
