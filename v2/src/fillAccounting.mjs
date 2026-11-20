@@ -7,16 +7,18 @@
  *
  * All arithmetic uses BigInt fixed-point decimals; never JS floats.
  * Fees are counted only in an explicitly specified single denomination.
- * builderFee is reported separately because inclusion in 'fee' can vary.
+ * Hyperliquid documents 'fee' as inclusive of any optional builderFee;
+ * builderFee is reported separately for attribution, NEVER added a second time.
  */
 import {sizeUnits,moneyUnits,formatUnits} from './ledger.mjs';
 
-const MONEY=1000000n,SIZE=100000000n,NOTIONAL=SIX();
-function SIX(){return MONEY*SIZE;}
+const MONEY=1000000n,SIZE=100000000n,NOTIONAL=MONEY*SIZE;
+const MAX_U64=(1n<<64n)-1n;
 const COIN=/^[A-Z][A-Z0-9:_-]{0,31}$/;
 function oid(value,label){
  const v=typeof value==='string'?value:(Number.isSafeInteger(value)&&value>=0?String(value):null);
- if(v===null||! /^(0|[1-9][0-9]*)$/.test(v))throw Error('Unsafe or missing '+label);
+ if(v===null||! /^(0|[1-9][0-9]*)$/.test(v)||BigInt(v)>MAX_U64)
+  throw Error('Unsafe or missing '+label);
  return v;
 }
 function exactMoney(v,label,{positive=false}={}){
@@ -107,7 +109,9 @@ export function summarizePerpFillEconomics({intent,exchangeOrderId,observedFills
   observedFeeUsd:formatUnits(fees,MONEY),
   observedClosedPnlUsd:formatUnits(pnl,MONEY),
   observedBuilderFeeUsdSeparate:formatUnits(builder,MONEY),
-  builderFeeIncludedInFeeTotal:'UNVERIFIED',
+  builderFeeIncludedInFeeTotal:'YES_PER_HYPERLIQUID_API_DOCS',
+  feeIncludesBuilderFee:true,
+  observedClosedPnlNetOfFillFeesUsd:formatUnits(pnl-fees,MONEY),
   historyComplete:false,commitAuthorized:false,executeAuthorized:false,
   safeToResubmit:false,requiresOperatorReview:true,
   caveat:'Totals cover only matched, uniquely observed fills; no funding, unobserved fills, margin movements, or full PnL assurance'});
