@@ -1,3 +1,14 @@
+# VERIFIED PRECISE EXCHANGE FILL ECONOMICS — 2026-11-20
+
+**Verified implementation:** `15f296b5d31ce50ec713d16ce657c41413ef651d`. **269/269 Node 22 tests passed**, and both disposable real PostgreSQL integration scripts passed in [GitHub Actions run 44684159182](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44684159182).
+
+- Added `src/fillAccounting.mjs` with purely read-only, fixed-point per-order/per-fill gross notional, confirmed observed size, observed USDC fee and closed-PnL summaries. TIDs deduplicate only when all recorded economic fields agree; malformed/unsafe IDs, mismatched markets, unsupported fee tokens, missing fees and observed overfills halt.
+- Builder fees are tracked separately because inclusion in the primary fee is not independently verified. Data gaps, funding, liquidation costs and unrelated exchange orders remain independent risk gates.
+- Added ten adversarial fill-accounting tests. **This summary does not settle a batch, authorize a retry, change a portfolio holding, call /exchange or enable trading.** The independent adjudication design is in `SETTLEMENT-GATE.md`.
+- Current critical blockers: verified all-five source identities and exact at-fill equity sizing; actual vault agent authorization/testnet demonstration; complete authenticated-enough exchange fill provenance; independent transactionally atomic settlement with partials/fees; cancellation during emergency HALT; sustained paper trading and third-party review. No mainnet funding or activation.
+
+---
+
 # VERIFIED SETTLEMENT EVIDENCE JOURNAL — 2026-11-20
 
 **Verified implementation:** `76fe57ab310a8948a353ee2f73edfec6e95c67b0`. **259/259 Node 22 tests passed**, and **both disposable real PostgreSQL integration scripts passed** in [GitHub Actions run 44683708422](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44683708422). Later documentation-only commits require their own CI verification.

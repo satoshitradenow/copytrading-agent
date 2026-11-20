@@ -291,3 +291,27 @@ opening leg of a reversal. The next separate engineering task is a
 transactionally correct **independent** settlement adjudication and
 fee/partial-fill ledger, with actual exchange authority validated only
 on explicitly approved testnet; do not deploy to mainnet based on these tests.
+
+
+## Exact per-fill economics, not a settlement authorization
+
+`src/fillAccounting.mjs` adds a pure read-only summary of individual,
+unaggregated Hyperliquid perpetual fill records. It validates precise
+order ID, transaction ID, market/side, size, price, fee token, fee,
+closed PnL, timestamp and optional builder fee / position metadata.
+Conflicting replays of the same trade ID fail closed. It uses only
+BigInt fixed point, preserving 8-decimal sizes, 6-decimal USD prices
+and fees, and up to 14-decimal exact notional multiplication. It
+separately reports builder fees rather than assuming whether they are
+already included in the primary exchange fee. The conservative first
+version supports only USDC-denominated fills and rejects unknown fee
+denominations instead of pretending the numbers can be summed.
+
+Every summary is flagged `historyComplete:false`,
+`commitAuthorized:false`, `executeAuthorized:false` and
+`safeToResubmit:false`. It is **not yet connected** to the settlement
+promotion process; there is no such public promotion process. It does
+not infer funding, leverage liquidations, fees beyond observed fills,
+full account PnL or any missing exchange trade. Test coverage includes
+maker rebates, partial fills, duplicated/conflicting IDs, exact
+fractional notional, missing fee data and cross-order fills.

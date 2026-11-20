@@ -62,12 +62,18 @@ orders, no automatic settlement, no agent permissions, no real funds.
 
 ## Current test evidence and the next coding boundary
 
-The build implementing the durable review-only audit and chronology checks
-passed 259/259 Node 22 tests plus both isolated PostgreSQL integration scripts
-in [GitHub Actions 44683708422](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44683708422).
+The read-only audit, chronology safeguards, and independent pure
+`fillAccounting.mjs` pass **269/269 Node 22 tests** plus both isolated
+PostgreSQL integration scripts in
+[GitHub Actions 44684159182](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44684159182).
+`fillAccounting.mjs` accounts for unaggregated per-order matched fills,
+strict economic duplicate detection, fees, builder fee separation, partial
+sizes, realized PnL and exact notional without floating-point rounding.
 
-The next code change should begin with a **separate pure per-fill accounting
-model and adversarial tests**, not by granting existing audit reports permission
-to settle. A future promotion API needs its own explicit authorization
-specification, transactional proof, operator review, and end-to-end recovery
-tests before it could be considered. This file is a gate, not approval.
+The **next coding boundary** is to connect trustworthy enough independent
+exchange-fill provenance to a separate per-fill settlement adjudicator,
+then design an operator-approved, fenced and transactionally atomic
+portfolio promotion. No current audit report or fill-accounting summary
+authorizes a transition. A future promotion API needs explicit operator
+authorization, transaction proofs, recovery and adversarial tests.
+This file is a gate, not approval.
