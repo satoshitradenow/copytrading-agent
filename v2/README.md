@@ -204,3 +204,18 @@ The `previewCurrentVaultIntent` function in `src/shadowPreflight.mjs` now connec
 ## Live per-side exchange capacity preflight
 
 `readVaultAssetLeverage()` now also captures and validates `activeAssetData.maxTradeSzs` ([maximum buy size, maximum sell size]). The unsigned order planner rejects a size exceeding the **currently reported directional maximum** before it becomes an execution candidate. Because the API may return capacities with more than eight decimal places, comparisons deliberately **floor available capacity** to the local fixed-point size precision (never round up a proposed trade). Missing, malformed or stale capacity fails closed. This avoids pointless or riskier rejected orders, especially for small vault balances. Market capacity is an observation, not a guarantee of an exchange fill; stale market conditions and incomplete positions still require independent review. Five regression tests cover capacity limits, high-precision flooring and missing fields.
+
+
+## Five-trader netting and drift protection (2026-11-20)
+
+`src/portfolioNetting.mjs` adds **pure, non-executing portfolio previews** on top of `ShadowLedger`. For each newly captured source fill, a temporary replay projects the five virtual strategy exposures into one vault target. Before proposing any order, it requires:
+- An explicit, empty list of unresolved vault order intents; absent information is not proof of safety.
+- A fresh vault `READ_ONLY` account snapshot for the correct vault and network, with **every actual position** matching the previously *confirmed* net target. Untracked manual positions, partial fills, and previous unexecuted orders halt new proposals.
+- A source fill with an explicit Hyperliquid `startPosition`, plus a recent source equity/account observation from the correct trader/network whose post-fill position matches the fill. This checks consistency, **not exact historical equity**; intervening deposits, funding, rapid fills and time skew remain material limitations.
+- Event-only changes. A price update or equity change on its own generates no new order. The preview does not update the journal, any database or Hyperliquid.
+- If a requested net position crosses zero, emit **separate close-first and open-after-close intents** with distinct deterministic IDs; the second is *not eligible for submission* until independent settlement and fresh risk checks. A partially filled first leg is a stop condition.
+
+`ShadowLedger` now fingerprints the amount, price, side, equity evidence, starting position and timestamp of every new source fill. Repeating an exchange fill ID with different economics raises an error instead of being silently deduplicated. Existing legacy records without fingerprints are **not trusted** to authorize an identical replay; manually review or rebaseline.
+
+**Not production execution:** the portfolio preview is **not atomic** with PostgreSQL source capture, risk approvals, order intents or exchange fills. `portfolioNetting.mjs` doesn't import a signer or execution adapter. The output is an unsigned planning artifact; each leg must pass `shadowPreflight` and fenced durable recording later, with all chain/account assertions repeated. Production must distinguish unexecuted *desired* targets from actual settled exposure.
+

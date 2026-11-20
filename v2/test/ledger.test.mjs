@@ -167,3 +167,35 @@ test('explicit sourceStartPosition blocks inherited or out-of-order trade copyin
   l.applyFill(fill({fillId:'close',sourceStartPosition:'1',side:'sell',size:'1'}));
   assert.equal(l.snapshot().net.BTC,'0');
 });
+
+test('same source transaction ID with different amount or side never becomes a harmless duplicate',()=>{
+  const ledger=setup();ledger.applyFill(fill());
+  for(const changed of [{size:'2'},{side:'sell'},{priceUsd:'50001'},
+    {sourceEquityUsd:'100001'},{sourceStartPosition:'1'},{timeMs:1234567}]){
+    assert.throws(()=>ledger.applyFill(fill(changed)),/Conflicting source fill ID/);
+  }
+  assert.equal(ledger.snapshot().journaledFills,1);
+});
+
+test('source fill economic fingerprints survive journal replay and preserve deduplication',()=>{
+  const journal=new MemoryJournal(),first=setup({journal});
+  first.applyFill(fill({timeMs:112233,sourceStartPosition:'0'}));
+  const records=journal.readAll();
+  assert.match(records[0].fillDigest,/^[a-f0-9]{64}$/);
+  const second=setup({journal:new MemoryJournal(records)});
+  assert.equal(second.applyFill(fill({timeMs:112233,sourceStartPosition:'0'})).status,'duplicate');
+  assert.throws(()=>second.applyFill(fill({timeMs:112234,sourceStartPosition:'0'})),/Conflicting source fill ID/);
+});
+
+test('legacy un-fingerprinted journal cannot waive a duplicate provenance check',()=>{
+  const journal=new MemoryJournal();setup({journal}).applyFill(fill());
+  const record=journal.readAll()[0];delete record.fillDigest;
+  const restored=setup({journal:new MemoryJournal([record])});
+  assert.throws(()=>restored.applyFill(fill()),/missing historical fingerprint/);
+});
+
+test('invalid fingerprint in persisted journal fails closed at startup',()=>{
+  const journal=new MemoryJournal();setup({journal}).applyFill(fill());
+  const record=journal.readAll()[0];record.fillDigest='not-a-digest';
+  assert.throws(()=>setup({journal:new MemoryJournal([record])}),/economic fingerprint/);
+});

@@ -4,6 +4,8 @@
  * This is a foundation for a reviewed persistent production worker, not a trading bot.
  */
 
+import {createHash} from 'node:crypto';
+
 const SCALE = 100_000_000n;
 const MONEY_SCALE = 1_000_000n;
 const WALLET_RE = /^0x[0-9a-fA-F]{40}$/;
@@ -40,6 +42,21 @@ function addr(value) {
 function abs(v) { return v < 0n ? -v : v; }
 function positionKey(trader, coin) { return `${trader}|${coin}`; }
 
+/** Economic identity for a source fill: duplicate IDs cannot be reused with
+ * different sizing, equity evidence, timestamp, or pre-fill positions. */
+function fillFingerprint(fill,trader,coin) {
+  if(fill.timeMs!==undefined && (!Number.isSafeInteger(fill.timeMs)||fill.timeMs<=0))
+    throw new Error('Invalid source fill event timestamp');
+  const parts=[trader,fill.fillId,coin,fill.side,
+    String(integerDecimal(fill.size,SCALE,'source fill size',{positive:true})),
+    String(integerDecimal(fill.priceUsd,MONEY_SCALE,'priceUsd',{positive:true})),
+    String(integerDecimal(fill.sourceEquityUsd,MONEY_SCALE,'sourceEquityUsd',{positive:true})),
+    fill.sourceStartPosition===undefined?null:String(integerDecimal(fill.sourceStartPosition,SCALE,'sourceStartPosition')),
+    fill.timeMs??null];
+  return createHash('sha256').update(JSON.stringify(parts)).digest('hex');
+}
+
+
 export class MemoryJournal {
   constructor(entries = []) { this.entries = [...entries]; }
   readAll() { return [...this.entries]; }
@@ -72,6 +89,7 @@ export class ShadowLedger {
     }
     this.journal = journal;
     this.seen = new Set();
+    this.seenFingerprints = new Map();
     this.virtual = new Map();
     this.sourcePositions = new Map();
     this.net = new Map();
@@ -96,6 +114,9 @@ export class ShadowLedger {
     this.sourcePositions.set(k, prevSource + sourceDelta);
     this.net.set(rec.coin, netPrev + delta);
     this.seen.add(rec.fillKey);
+    if(rec.fillDigest!==undefined && (typeof rec.fillDigest!=='string'||!/^[a-f0-9]{64}$/.test(rec.fillDigest)))
+      throw new Error('Invalid source fill economic fingerprint in journal');
+    this.seenFingerprints.set(rec.fillKey,rec.fillDigest??null);
   }
 
   applyFill(fill) {
@@ -109,7 +130,12 @@ export class ShadowLedger {
       throw new Error('Missing or invalid unique exchange fill identifier');
     }
     const fillKey = `${trader}:${fill.fillId}`;
-    if (this.seen.has(fillKey)) return { status: 'duplicate', fillKey, intent: null };
+    const fingerprint=fillFingerprint(fill,trader,coin);
+    if(this.seen.has(fillKey)){
+      const existing=this.seenFingerprints.get(fillKey);
+      if(!existing || existing!==fingerprint)throw new Error('Conflicting source fill ID or missing historical fingerprint; fail closed');
+      return {status:'duplicate',fillKey,intent:null};
+    }
     if (fill.side !== 'buy' && fill.side !== 'sell') throw new Error('side must be buy or sell');
     // Source equity must be captured and independently reconciled at event time.
     // No guessed equity and no copying 1:1 source contract quantities.
@@ -153,7 +179,7 @@ export class ShadowLedger {
     // A close is allowed even if mark-price changes have placed an existing
     // position above its opening cap. Global vault margin is a separate gate.
     const netBefore = this.net.get(coin) ?? 0n;
-    const record = { version: 1, fillKey, trader, coin, sourceDeltaUnits: String(signedSourceSize), deltaUnits: String(virtualDelta) };
+    const record = { version: 1, fillKey, trader, coin, fillDigest:fingerprint, sourceDeltaUnits: String(signedSourceSize), deltaUnits: String(virtualDelta) };
     // Journal first. If durable append fails, do not change account state.
     this.journal.append(record);
     this.#restore(record);

@@ -113,7 +113,7 @@ export async function readSourceEquityObservation(traderAddress,options={}) {
   const equity=state?.marginSummary?.accountValue;
   if(typeof equity!=='string'||! /^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(equity)||
      !Array.isArray(state.assetPositions))throw Error('Malformed source equity observation');
-  return {mode:'READ_ONLY',trader,accountValueUsd:equity,
+  return {mode:'READ_ONLY',network:options.network??'mainnet',trader,accountValueUsd:equity,
     observedAtStartMs,observedAtEndMs,positions:state.assetPositions,
     limitation:'Snapshot is not historical fill-time equity; cannot authorize an order on its own'};
 }

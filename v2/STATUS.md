@@ -1,3 +1,15 @@
+# CURRENT MILESTONE — 2026-11-20: FIVE-STRATEGY NETTING (SHADOW ONLY)
+
+- Added pure `portfolioNetting.mjs` with source-event-only projection across five strategy allocations, explicit mainnet/testnet matching, source start-position and recent account/equity observation, vault drift checks on **all markets**, refusal when any prior order remains unresolved, and deterministic split close/open intents for vault net reversals.
+- Added 17 focused portfolio tests (including 150-event replay and a five-trader portfolio) and 4 source economic-fingerprint tests. Tests are deliberately simulated; they **do not** prove live exchange execution.
+- A source-fill ID with changed size, side, price, equity evidence, pre-fill position or timestamp now blocks rather than being counted as harmless duplicate. Older un-fingerprinted source ledger journals require manual review before replay.
+- Current source equity observation now includes network. This observation is **not exact equity at trade time** and cannot by itself authorize actual copy orders.
+- **Critical hold:** current virtual source state represents **desired** follower positions, never proof of actual filled exposure. The new preview refuses new source intent proposals if its expected prior net does not match a recent vault snapshot. This preview does not mutate the source journal or database.
+- Pending integration: one atomic PostgreSQL transaction across captured source event, portfolio state and trade intents; exchange fill settlement evidence; per-leg independent preflight and confirmation; full source list verification, delegated vault-signing testnet proof and independent security review. No live trading, old Render still suspended.
+- Prior release milestones below are historical, with earlier test counts. The GitHub CI result for this new commit should be verified independently.
+
+---
+
 # CURRENT HANDOFF — 2026-11-20 (supersedes older milestone counts)
 
 **Status: SHADOW/READ-ONLY ONLY. Never run the inherited root `src/` trader or fund a bot using this branch without passing the remaining live-execution gates.**
