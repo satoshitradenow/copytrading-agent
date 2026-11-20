@@ -29,6 +29,13 @@ import { logger } from "./utils/logger.js";
  */
 async function main() {
   try {
+    // HARD SAFETY GATE FOR THIS DEVELOPMENT BRANCH:
+    // The original executor still converts WebSocket notifications into
+    // target-position syncs and has no persisted per-fill order attribution.
+    // The read-only v2 watch:pg:env worker is the only approved runtime here.
+    // This branch MUST NOT silently begin trading if a Render worker points
+    // at it with the legacy FOLLOWER_PRIVATE_KEY still configured.
+    throw new Error("Vault integration execution is not authorized: run the signer-free v2 shadow monitor instead");
     // Load environment variables from .env if present
     dotenv.config();
     // Load configuration from environment variables
