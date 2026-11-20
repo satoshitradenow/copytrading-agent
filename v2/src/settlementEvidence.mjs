@@ -69,6 +69,8 @@ function auditOne(batch,leg,report,previousSnapshotTime,nowMs){
     if(oid!==result.exchangeOrderId)continue;
     const time=positiveMs(row.time,'observed fill timestamp');
     if(time<previousSnapshotTime||time>nowMs)throw Error('Exchange fill time precedes previous vault snapshot or is future');
+    if(Number.isSafeInteger(result.statusTimestamp) && time>result.statusTimestamp)
+      reasons.push('ORDER_STATUS_PRECEDES_OBSERVED_FILL');
     if(report.vaultSnapshot && Number.isSafeInteger(report.vaultSnapshot.asOfMs) && time>report.vaultSnapshot.asOfMs)
       reasons.push('POST_ORDER_SNAPSHOT_PRECEDES_FILL');
   }
