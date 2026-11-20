@@ -1,5 +1,12 @@
-import { readVaultPublicState } from './hyperliquidRead.mjs';
-const address=process.argv[2];
-if (!address) { console.error('Usage: npm run inspect -- 0xYOUR_PUBLIC_VAULT_ADDRESS'); process.exit(2); }
-const state=await readVaultPublicState(address);
-console.log(JSON.stringify({mode:state.mode,vaultAddress:state.vaultAddress,leader:state.leader,name:state.name,accountValueUsd:state.accountValueUsd,positionCount:state.positions.length},null,2));
+/** Read-only public vault inspection; never logs secrets or sends orders. */
+import {verifyVaultDestination} from './vaultTarget.mjs';
+const identifier=process.argv[2]??process.env.V2_VAULT_ADDRESS;
+if(!identifier){
+  console.error('Usage: npm run inspect -- HL:0xYOUR_PUBLIC_VAULT_ADDRESS (or V2_VAULT_ADDRESS environment variable)');
+  process.exitCode=2;
+}else{
+  const verified=await verifyVaultDestination({identifier,
+    expectedLeader:process.env.V2_EXPECTED_VAULT_LEADER??null,
+    expectedName:process.env.V2_EXPECTED_VAULT_NAME??null});
+  console.log(JSON.stringify(verified,null,2));
+}
