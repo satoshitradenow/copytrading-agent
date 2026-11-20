@@ -1,3 +1,32 @@
+# CURRENT HANDOFF — 2026-11-20 (supersedes older milestone counts)
+
+**Status: SHADOW/READ-ONLY ONLY. Never run the inherited root `src/` trader or fund a bot using this branch without passing the remaining live-execution gates.**
+
+- Latest developed implementation commit: `8595ff4e3b1c3dcfe6e2548a5e884d8a9d55f087`. Follow-on documentation commit can advance the branch head.
+- **176 Node.js unit/property tests passed** on the new order planner and preceding modules. GitHub Actions test job verified; separate disposable PostgreSQL integration job runs alongside it. [CI run](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44676666969).
+- Isolated **Neon Free-plan PostgreSQL 18 test project** `vault-copy-v2-integration-test` (`vault_copy_v2_test`) exists independently of Core Fraction. Real DB uniqueness, transaction rollback and writer-lease semantics were tested. The separate GitHub Actions PostgreSQL 16 job tests actual Node `PgVaultWriterLease` and `PgIntentRepository` on each commit, not just SQL mocks. No live vault credentials or funds.
+- Vault destination: public Hyperliquid mainnet page previously verified as a genuine vault, **E30 Vault 1**, with a public leader; the full vault address is intentionally **not** hardcoded or published in repo fixtures. Keep it in runtime settings.
+- Trader source state: three candidate public addresses are in `v2/config/traders.example.json`, all **DISABLED**; two final source wallet addresses are still not independently recovered. Never assume candidates are final.
+- `src/ledger.mjs`: one-to-five trader virtual allocation and event-only target changes. No price-driven/equity-driven periodic rebalance orders.
+- `src/pgSourceCapture.mjs` plus `src/readOnlyMonitor.mjs`: duplicate-resistant source fill history with split pagination, DB checkpoints and gap guards; source WS is merely a trigger to REST fetch, not an execution authority.
+- `src/pgIntentRepository.mjs` + `src/pgVaultWriterLease.mjs`: exact-fill intent uniqueness, event audit, lease fencing, risk receipt bound to exact order, stale writer and unresolved order blocking.
+- `src/orderEvidence.mjs`: read-only exchange order-status and observed fill evidence; **never automatically resubmits UNKNOWN orders**.
+- `src/orderPlanner.mjs`: **unsigned**, IOC-only, fixed-point lot/price formatting (including high-integer exception), slippage ceiling, min notional, no silent rounding, block unsplit position flips, fresh risk approval recheck, network matching, observed vault cross-leverage consistency, and per-side `activeAssetData.maxTradeSzs` capacity check. No signer, no `/exchange` request.
+- `src/shadowPreflight.mjs`: end-to-end read-only vault identity -> fresh margin/market/metadata/leverage -> fresh risk -> unsigned IOC preview. Supported network must match ALL observations.
+- Old Render `copy-agent` remains **suspended** for billing with auto deploy off; no v2 Render service or mainnet trading orders exist. GitHub `main` is unchanged.
+
+## BLOCKERS BEFORE ANY LIVE DEPLOYMENT
+
+1. Confirm all five source trader addresses and perform sustained read-only streaming/replay against current public fills. Need a credible, explicit source equity at-fill sizing policy; Hyperliquid fills do **not** contain historical equity snapshots.
+2. Verify the complete public vault leader address, user-led vault authority and API-agent signing permissions. A valid public vault address and the presence of `vaultAddress` in SDK code **do not establish permission**.
+3. Test signed trade routing with a newly funded, explicitly authorized **testnet** vault, separate from the owner's existing mainnet vault. No mainnet order or transfer without specific approval.
+4. Integrate one fenced writer, durable source->intent->order->exchange fill recovery, precision, liquidations, fee/slippage accounting and kill switch. Uncertain HTTP responses may never initiate blind retries.
+5. Validate cross-market netting and five-leader opposing exposures, position flips as *separate* approved close/open intents, partial executions and manual changes of leverage/account settings.
+6. Run sustained shadow simulation plus adversarial loss/network tests and independent security review. Only then request approval for a **small** mainnet pilot; never auto-deploy the broken root runner.
+7. Preserve the system's limitations: all source history queries have retention/page caps; quote/account snapshots are non-atomic; an API agent cannot ordinarily withdraw but can still generate leveraged trading losses.
+
+---
+
 # VERIFIED DATABASE INTEGRATION — 2026-11-20
 
 - A **separate Neon Free-plan test project** was created: `vault-copy-v2-integration-test` / database `vault_copy_v2_test`; it is NOT the existing Core Fraction Neon project. Only the v2 prototype schema was applied there; test records were cleaned up. No trading activity.
