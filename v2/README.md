@@ -349,3 +349,41 @@ reversals, with fully deterministic inputs. Test-only full fills are explicitly
 simulated in memory; neither the exchange nor the database is settled by this
 harness. A deterministic stress test is not proof of a real monitored shadow
 run, historical source equity, or profitability.
+
+## Cross-batch observed-fill collision prevention (still shadow-only)
+
+`src/pgObservedFillRegistry.mjs` and `sql/006_observed_exchange_fills.sql`
+maintain an immutable-by-application review index of **observed** individual
+Hyperliquid trade IDs, scoped by network and vault address. Each observation
+is pinned to the staged source batch, client/exchange order IDs and a
+stable digest of normalized size, price, fee, realized PnL, transaction
+hash (when present), time and pre-fill position. Repeated observations can
+reaffirm exact economics; an attempt to reuse a trade ID for a second source
+event, or to change its recorded economics, aborts.
+
+`PgSettlementAuditLog.recordEconomics()` writes this index together with the
+review evidence in one SERIALIZABLE PostgreSQL transaction. Neither write
+performs any portfolio promotion, signs an order or proves historical source
+equity. `listForReview()` uses a consistent READ ONLY snapshot and detects
+deleted/altered registry records as well as altered audit-chain evidence.
+Earlier economic review rows recorded without SQL 006 would intentionally
+fail the new integrity check until reviewed and migrated; do not backfill
+claims from untrusted snapshots automatically.
+
+## Operator recovery inspection (never an execution-control authority)
+
+`PgVaultRecoveryInspector.inspect({vaultAddress})` returns a read-only,
+one-snapshot diagnosis of emergency HALT, writer-lease expiry, proposed
+source events and unresolved/possibly filled intents. It highlights
+uncertain exchange states, missing audit evidence and missing control rows.
+It **always** returns `readyToResumeTrading:false`,
+`settlementAuthorized:false`, `executeAuthorized:false` and
+`safeToResubmit:false`: a DB snapshot cannot prove that an interrupted
+HTTP request failed, and a status of FILLED is not a completed portfolio
+settlement. There is no unhalt, cancel, order submission, or automatic
+recovery call.
+
+[GitHub CI 44699998329](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44699998329)
+verifies 307 Node unit tests and both disposable PostgreSQL suites. The
+new registry schema must be applied only to the isolated CI database in this
+phase, not silently to a live environment.

@@ -103,3 +103,27 @@ authorized testnet-only signing and recovery; emergency exchange cancellation
 and restart failover; sustained monitored read-only operation and external
 security/financial risk review. No permission to arm or fund trading is
 inferred from these tests.
+
+## Observed trade-ID registry and operator recovery diagnostic
+
+`006_observed_exchange_fills.sql` and `PgSettlementAuditLog.recordEconomics()`
+now index each independently reviewed fill under (network,vault,tid), with a
+digest of its economic record and original source batch. The index prevents
+the **same observed fill** being attributed to a different source event or
+having its fees/size/price/PnL silently rewritten. It is written atomically
+alongside the evidence audit and independently checked on readback. This is
+not exchange-authenticated provenance, complete history or settlement.
+
+`PgVaultRecoveryInspector` reads current database controls, writer lease,
+pending batches, intent statuses and audit pointers under one read-only
+snapshot and reports blocking reasons. The inspector **cannot** authorize
+trade retry, unhalt, settlement, or new orders even when it finds no obvious
+problems. Independent exchange reconciliation and human authorization remain
+separate prerequisites.
+
+**Verified development CI:** [307 tests plus two PostgreSQL suites,
+run 44699998329](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44699998329).
+The current implementation does **not** implement the independently approved
+atomic settlement process or the live trading connector. Historical economic
+audit data predating this index needs controlled migration and independent
+evidence review; silently trusting/backfilling its fill claims is prohibited.
