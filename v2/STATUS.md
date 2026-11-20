@@ -1,3 +1,12 @@
+# INTEGRATION FAILURE CAUGHT AND CORRECTED — 2026-11-20
+
+- A disposable GitHub PostgreSQL test correctly failed on `readForAudit()`: DB `jsonb` reorders keys, and the initial batch hash was insertion-order-sensitive.
+- The batch hash now uses recursively key-sorted canonical JSON; array order remains significant. Regression tests cover canonical JSONB readback and hash tampering.
+- This is a **breaking content-hash format change** for any legacy STAGED batches from earlier shadow-only prototypes. Do not auto-accept/reconcile old IDs. No live production batches exist.
+- The full PostgreSQL CI rerun for the corrective commit is the authoritative verification; not yet claimed here.
+
+---
+
 # LATEST WORK — 2026-11-20: READ-ONLY EXCHANGE SETTLEMENT AUDIT
 
 - Added `src/settlementEvidence.mjs`: content-hashed staged portfolio batch versus read-only order status, individual exchange fills, and observed vault position snapshots. It refuses to classify partials/canceled/unknown order IDs as settled and blocks the second reversal leg if the close is unresolved.

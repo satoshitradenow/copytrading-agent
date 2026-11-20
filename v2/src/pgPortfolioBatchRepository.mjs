@@ -17,6 +17,16 @@ const HEX64=/^[a-f0-9]{64}$/;
 const WRITER=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const FENCE=/^[1-9][0-9]{0,18}$/;
 const abs=n=>n<0n?-n:n;
+/** PostgreSQL jsonb reorders object keys; hash stable canonical JSON, not JS insertion order. */
+function canonicalJson(value){
+  if(Array.isArray(value))return value.map(canonicalJson);
+  if(value&&typeof value==='object'){
+    const out={};
+    for(const key of Object.keys(value).sort())out[key]=canonicalJson(value[key]);
+    return out;
+  }
+  return value;
+}
 function checkOwner({writerId,fencingToken}={}){
   const token=String(fencingToken);
   if(typeof writerId!=='string'||!WRITER.test(writerId)||!FENCE.test(token)||BigInt(token)>(1n<<63n)-1n)
@@ -92,7 +102,7 @@ export function validateStagedPortfolioPreview(preview){
   const canonical={vaultAddress,network,sourceFillKey:source.fillKey,
     sourceRecord:{...source},expectedNetBefore:before,desiredNetAfter:after,
     legs};
-  const batchId=createHash('sha256').update('hl-vault-v2-portfolio-batch\n'+JSON.stringify(canonical)).digest('hex');
+  const batchId=createHash('sha256').update('hl-vault-v2-portfolio-batch\n'+JSON.stringify(canonicalJson(canonical))).digest('hex');
   return Object.freeze({batchId,...canonical});
 }
 async function transact(pool,fn){

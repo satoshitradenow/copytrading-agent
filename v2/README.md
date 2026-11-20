@@ -246,3 +246,8 @@ The policy is explicitly configurable: taker-fee/slippage stress assumptions, mi
 `PgPortfolioBatchRepository.readForAudit()` reconstructs an immutable unsigned preview from the persisted PostgreSQL batch and recomputes its content hash. A worker restart can therefore inspect the precise staged proposal without fabricating it from a target position. The isolated real-PostgreSQL integration now verifies this read path.
 
 **A report labelled `CORROBORATED_BUT_NOT_SETTLED` is NOT authorization to trade or to mark a batch SETTLED.** Public order/fill/account data are not atomic, and the retained fill API may be incomplete. The module always returns `commitAuthorized:false`, `executeAuthorized:false`, `safeToResubmit:false` and `requiresOperatorReview:true`. The existing database still has **no public automatic settlement transition** and stages remain frozen until a future independently audited, transactionally correct recovery/settlement workflow is implemented. No signer, private key, exchange write or Render deployment has been added.
+
+
+### Stable batch identity across JSONB persistence
+
+The isolated PostgreSQL integration initially caught a mismatch between a batch hash created in application memory and one reconstructed after PostgreSQL's `jsonb` object-key ordering. `validateStagedPortfolioPreview` now canonicalizes nested JSON object keys before hashing, while preserving array order. A regression test deliberately reverses nested object key order. **This changes the preview batch-ID algorithm compared with earlier shadow-only prototypes; any legacy draft batches must be reviewed and rebaselined, not silently migrated.** It is not authorization to mark a batch settled.

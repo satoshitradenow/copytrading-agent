@@ -167,3 +167,16 @@ test('database audit reader rejects corrupt source record, wrong vault and nonex
  pool.db.batches.get(staged.batchId).source_record.fillDigest='0'.repeat(64);
  await assert.rejects(repo.readForAudit({batchId:staged.batchId,vaultAddress:VAULT}),/content hash mismatch/);
 });
+
+
+test('content hash survives PostgreSQL jsonb recursive object-key normalization',()=>{
+ const p=draft();const initial=validateStagedPortfolioPreview(p).batchId;
+ function reorder(x){
+  if(Array.isArray(x))return x.map(reorder);
+  if(x&&typeof x==='object')return Object.fromEntries(Object.keys(x).sort().reverse().map(k=>[k,reorder(x[k])]));
+  return x;
+ }
+ const reordered=reorder(p);
+ assert.equal(validateStagedPortfolioPreview(reordered).batchId,initial,
+   'batch identifier must be stable after jsonb object-key reordering');
+});
