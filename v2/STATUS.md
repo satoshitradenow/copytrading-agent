@@ -1,3 +1,17 @@
+# VERIFIED BUILD HANDOFF — 2026-11-20
+
+**Current implementation commit:** `ead9ec2505d1d09b269dc681509fcc81b98d5227` (economic anti-churn gate). The next documentation commit only records this verification.
+
+**CI outcome:** **221 / 221** Node 22 application tests passed and both isolated PostgreSQL integration scripts passed in disposable GitHub Actions PostgreSQL. [Verified CI run](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44679256108). This is not proof of production safety or profitability.
+
+**Implemented, shadow-only:** source capture; immutable source economic fingerprints; five-strategy virtual ledger; opposing-trader netting; explicit close-first/open-after-confirmation for reversals; expected-vs-observed vault position drift halt; vault risk and IOC precision/slippage/capacity preflight; lease-fenced intent recording; staged source batch persistence without prematurely posting virtual executions; exchange order status evidence (read-only, no blind retries); optional fee/cost, market cooldown, hourly/daily anti-churn budget guard.
+
+**Top remaining safety gates:** full source trader address list and auditable at-fill capital sizing policy; verified full vault-leader and testnet API agent permissions; actual exchange order signing/adaptor on testnet only; reliable exchange fill/partial/reject reconciliation; independently verified portfolio batch settlement (no current public settle method); durable attempt history and per-order costs integrated transactionally; sustained monitored shadow test; operator-controlled emergency shutdown and incident recovery; explicit separate owner approval for any tiny mainnet pilot. Old root trading engine must never be deployed as v2.
+
+**Infrastructure:** GitHub development branch only. The original Render `copy-agent` remains suspended for billing and automatic deployment off as last verified. The user-provided destination is a genuine existing public Hyperliquid vault but is not stored in code; real funds and signing keys were not accessed. Isolated free Neon `vault-copy-v2-integration-test` is for database testing and is distinct from Core Fraction.
+
+---
+
 # ADDITIONAL MILESTONE — 2026-11-20: COST / CHURN PROTECTION
 
 - Pure `economicThrottle.mjs`: blocks copy entries that exceed explicit daily estimated cost, hourly/daily attempt count or market cooldown policies. Canceled and rejected attempts still count; incomplete history and any UNKNOWN/PARTIAL/SUBMITTED prior order halt.
