@@ -153,6 +153,36 @@ export class PgPortfolioBatchRepository {
     });
   }
 
+  /**
+   * Read an exact persisted batch and reconstruct its immutable preview for
+   * operator-only exchange evidence review. NO settlement or execution action.
+   * Recomputes the content-addressed batch hash to detect corrupted DB data.
+   */
+  async readForAudit({batchId,vaultAddress}={}){
+    if(typeof batchId!=='string'||!HEX64.test(batchId))throw Error('Valid 64-character batch hash required');
+    const vault=validateAddress(vaultAddress);
+    const rows=await this.pool.query(`
+      SELECT batch_id,vault_address,network,source_fill_key,source_record,
+             expected_net_before,desired_net_after,planned_legs,status
+      FROM v2_portfolio_batches
+      WHERE batch_id=$1 AND vault_address=$2`,[batchId,vault]);
+    if(rows.rows.length!==1)throw Error('Staged batch missing or ambiguous; fail closed');
+    const row=rows.rows[0];
+    const json=x=>typeof x==='string'?JSON.parse(x):x;
+    const legs=json(row.planned_legs);
+    if(!Array.isArray(legs)||!['STAGED','REVIEW_REQUIRED','SETTLED'].includes(row.status))
+      throw Error('Malformed persisted batch state');
+    const p={mode:'SHADOW_ONLY',status:'PREVIEW_ONLY',batchId:row.batch_id,
+      vaultAddress:row.vault_address,network:row.network,
+      sourceFillKey:row.source_fill_key,proposedSourceJournalRecord:json(row.source_record),
+      expectedNetBefore:json(row.expected_net_before),desiredNetAfter:json(row.desired_net_after),
+      intents:legs,requiresSequentialSettlement:legs.length===2,
+      executeAuthorized:false,commitAuthorized:false};
+    if(validateStagedPortfolioPreview(p).batchId!==batchId)
+      throw Error('Persisted batch content hash mismatch; possible corruption');
+    return Object.freeze({...p,persistedStatus:row.status});
+  }
+
   async pendingForVault(vaultAddress){
     const vault=validateAddress(vaultAddress);
     const result=await this.pool.query(`SELECT batch_id,source_fill_key,status,created_at

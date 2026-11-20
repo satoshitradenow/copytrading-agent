@@ -48,6 +48,10 @@ async function run(){
     firstBatch=(await repo.stage(one,owner)).batchId;
     assert.equal((await repo.stage(one,owner)).idempotent,true);
     assert.equal((await repo.pendingForVault(vault)).length,1);
+    const persisted=await repo.readForAudit({batchId:firstBatch,vaultAddress:vault});
+    assert.equal(persisted.persistedStatus,'STAGED');
+    assert.deepEqual(persisted.intents.map(x=>x.intentId),one.intents.map(x=>x.intentId));
+    assert.equal(persisted.executeAuthorized,false);
     await assert.rejects(repo.stage({...one,proposedSourceJournalRecord:{...one.proposedSourceJournalRecord,fillDigest:'a'.repeat(64)}},owner),/Conflicting portfolio batch/);
     const two=plan({...fill,fillId:'HL:TEST2',timeMs:11000});
     await assert.rejects(repo.stage(two,owner),/Previous source event/);

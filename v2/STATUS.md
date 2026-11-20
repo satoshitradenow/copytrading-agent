@@ -1,3 +1,13 @@
+# LATEST WORK — 2026-11-20: READ-ONLY EXCHANGE SETTLEMENT AUDIT
+
+- Added `src/settlementEvidence.mjs`: content-hashed staged portfolio batch versus read-only order status, individual exchange fills, and observed vault position snapshots. It refuses to classify partials/canceled/unknown order IDs as settled and blocks the second reversal leg if the close is unresolved.
+- Added `PgPortfolioBatchRepository.readForAudit()` for read-only restart reconstruction, validating the stored batch hash against its original intent/position/source record. Does **not** promote any batch or change virtual strategy holdings.
+- The audit is conservative **review only**, even when all observed evidence matches. It never authorizes execution, journal promotion or retry; true exchange completeness and account activity cannot be established from non-atomic snapshots alone.
+- Added 21 local focused tests for settlement and persisted reader behavior; the disposable PostgreSQL CI integration now also checks read-back of the exact staged batch. See CI for authoritative all-suite result.
+- Remaining major engineering work: independent auditable settlement procedure integrating live exchange fills with durable portfolio/source ledger; full five-source verification and actual at-fill equity policy; testnet vault-agent authorization/execution; sustained shadow monitoring; emergency stop and security review. Legacy Render remains suspended.
+
+---
+
 # VERIFIED BUILD HANDOFF — 2026-11-20
 
 **Current implementation commit:** `ead9ec2505d1d09b269dc681509fcc81b98d5227` (economic anti-churn gate). The next documentation commit only records this verification.

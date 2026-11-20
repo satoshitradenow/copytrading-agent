@@ -237,3 +237,12 @@ Each staging transaction requires a current PostgreSQL vault writer lease and fe
 The policy is explicitly configurable: taker-fee/slippage stress assumptions, minimum economically sensible notional, maximum estimated order cost and 24-hour cost budget, hourly/daily order counts, and per-market cooldown. This gate does **not** prove a trader has an edge or that the estimate equals actual realized fees or slippage. Legitimate *reduce-only* closes are exempt from economic-rate limits to avoid stranding risk, but an unmatched order, uncertain prior response or forged reduce-only classification still fails closed.
 
 **Not yet wired into executable orders:** future live integration must read a complete, exchange-audited attempt log under the active vault writer lease before honoring a cost receipt. No default thresholds have been selected for the user's actual vault, and the code cannot sign or submit.
+
+
+## Conservative read-only settlement evidence audit (2026-11-20)
+
+`src/settlementEvidence.mjs` assesses an **exact content-hashed staged portfolio batch** against its original vault position snapshot, read-only Hyperliquid order-status response, exchange fill IDs/sizes/times and a verified post-order vault position snapshot. For reversals, the second leg cannot be considered corroborated unless the first close leg has independent full-fill/status/flat-position evidence. Any mismatch, partial fill, unknown order, outdated snapshot, missing timestamp or unrelated vault position requires reconciliation rather than prompting a new order.
+
+`PgPortfolioBatchRepository.readForAudit()` reconstructs an immutable unsigned preview from the persisted PostgreSQL batch and recomputes its content hash. A worker restart can therefore inspect the precise staged proposal without fabricating it from a target position. The isolated real-PostgreSQL integration now verifies this read path.
+
+**A report labelled `CORROBORATED_BUT_NOT_SETTLED` is NOT authorization to trade or to mark a batch SETTLED.** Public order/fill/account data are not atomic, and the retained fill API may be incomplete. The module always returns `commitAuthorized:false`, `executeAuthorized:false`, `safeToResubmit:false` and `requiresOperatorReview:true`. The existing database still has **no public automatic settlement transition** and stages remain frozen until a future independently audited, transactionally correct recovery/settlement workflow is implemented. No signer, private key, exchange write or Render deployment has been added.

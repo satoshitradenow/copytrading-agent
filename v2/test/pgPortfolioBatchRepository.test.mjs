@@ -55,6 +55,10 @@ function mockPool(){
       throw Error('Unexpected SQL '+q.slice(0,120));
     }};
   },async query(query,args=[]){
+    if(query.includes('SELECT batch_id,vault_address,network,source_fill_key,source_record')){
+      const x=db.batches.get(args[0]);
+      return {rows:x&&x.vault_address===args[1]?[structuredClone(x)]:[],rowCount:x&&x.vault_address===args[1]?1:0};
+    }
     if(!query.includes('SELECT batch_id,source_fill_key,status,created_at'))throw Error('Unexpected direct SQL');
     const active=[...db.batches.values()].filter(x=>x.vault_address===args[0]&&['STAGED','REVIEW_REQUIRED'].includes(x.status));
     return {rows:active.map(x=>({batch_id:x.batch_id,source_fill_key:x.source_fill_key,status:x.status,created_at:x.created_at}))};
@@ -142,4 +146,24 @@ test('a pending review-required batch also blocks new source events',async()=>{
  for(const batch of pool.db.batches.values())batch.status='REVIEW_REQUIRED';
  const fill={...source,fillId:'HL:3',timeMs:12000};
  await assert.rejects(repo.stage(draft(fill),owner),/Previous source event has not been settled/);
+});
+
+
+test('database audit reader reconstructs exact content-hashed batch after restart',async()=>{
+ const pool=mockPool(),repo=new PgPortfolioBatchRepository(pool),preview=draft();
+ const staged=await repo.stage(preview,owner);
+ const restored=await new PgPortfolioBatchRepository(pool).readForAudit({batchId:staged.batchId,vaultAddress:VAULT});
+ assert.equal(restored.batchId,staged.batchId);
+ assert.equal(restored.persistedStatus,'STAGED');
+ assert.equal(restored.executeAuthorized,false);assert.equal(restored.commitAuthorized,false);
+ assert.deepEqual(restored.expectedNetBefore,preview.expectedNetBefore);
+ assert.deepEqual(restored.intents.map(x=>x.intentId),preview.intents.map(x=>x.intentId));
+});
+test('database audit reader rejects corrupt source record, wrong vault and nonexistent batch',async()=>{
+ const pool=mockPool(),repo=new PgPortfolioBatchRepository(pool),preview=draft();
+ const staged=await repo.stage(preview,owner);
+ await assert.rejects(repo.readForAudit({batchId:staged.batchId,vaultAddress:'0x'+'8'.repeat(40)}),/missing or ambiguous/);
+ await assert.rejects(repo.readForAudit({batchId:'0'.repeat(64),vaultAddress:VAULT}),/missing or ambiguous/);
+ pool.db.batches.get(staged.batchId).source_record.fillDigest='0'.repeat(64);
+ await assert.rejects(repo.readForAudit({batchId:staged.batchId,vaultAddress:VAULT}),/content hash mismatch/);
 });
