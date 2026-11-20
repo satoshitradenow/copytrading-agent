@@ -1,3 +1,13 @@
+# APPLICATION CORE DECISION — REUSE THIRD-PARTY GITHUB ENGINE (2026-11-20)
+
+**The original working application is authoritative.** Our fork, `satoshitradenow/copytrading-agent`, is derived from `Gajesh2007/copytrading-agent`. Do **not** replace its WebSocket/SDK/market-data/order-engine architecture with the experimental `v2/` shadow modules. Integrate safety modules as narrowly scoped adapters, after testing. The root TypeScript application and v2 suites all passed [GitHub CI 44706876364](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44706876364); this compiles the original but does not execute trades or show that its fee-churn bug is repaired.
+
+The original upstream's latest verified update was December 25, 2025, focused on React/Next.js security dependencies, not the core trading executor. The fork's `src/index.ts` contains two contradictory `syncWithLeader` monkey-patches; do not assume these reliably preserve legitimate fill copies. Preserve the proven original SDK/WebSocket code and build a **minimal tested event-only trigger** without enabling live trades. Refer to [UPSTREAM-CORE-AUDIT.md](UPSTREAM-CORE-AUDIT.md) for exact files, source comparison and compatibility plan.
+
+The prior historical VAULT chat has **not** been recovered word-for-word; prior handoff documents corroborate this fork/original-author relationship but are not full transcripts. Live Render deployment identity remains unverified. Root `main` has not been modified, no production order route activated, no keys/funds touched.
+
+---
+
 # VERIFIED CROSS-BATCH FILL SAFETY AND OPERATOR RECOVERY INSPECTION — 2026-11-20
 
 **Implementation:** `981ecab10fd80102aa4a7aa5f1a120528177f699`. **307/307 Node 22 tests passed**, and both disposable PostgreSQL integration suites passed in [GitHub Actions 44699998329](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44699998329).

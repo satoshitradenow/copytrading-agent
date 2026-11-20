@@ -1,3 +1,5 @@
+> **Original core first:** Vault uses the original third-party [Gajesh2007/copytrading-agent](https://github.com/Gajesh2007/copytrading-agent) code via our existing fork. The v2 directory is a shadow-only safety integration candidate, **not** a replacement trading application. Read [UPSTREAM-CORE-AUDIT.md](UPSTREAM-CORE-AUDIT.md) before changing architecture. Root original TypeScript compilation is now independently checked in the v2 CI; no live trading is enabled.
+
 # Hyperliquid vault copy v2 — shadow accounting foundation
 
 **Status: not live, not deployable to real funds. This module has no signing key, trading API client, order placement, transfer action or restart mechanism for live trading.** It is intentionally separate from the legacy `src/` tree and old `copy-agent` service.

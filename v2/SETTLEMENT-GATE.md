@@ -1,3 +1,5 @@
+> **Preservation requirement:** Build on the upstream third-party TypeScript app and original Hyperliquid SDK integration, not a ground-up replacement. See [UPSTREAM-CORE-AUDIT.md](UPSTREAM-CORE-AUDIT.md). Current v2 logic remains a shadow-only safety component suite and cannot authorize execution.
+
 # Vault Copier v2 — independent settlement gate
 
 **Status:** Design and acceptance criteria only. SHADOW/READ-ONLY. No signed
