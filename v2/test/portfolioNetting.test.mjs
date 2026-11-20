@@ -40,6 +40,8 @@ test('one source fill produces one unsigned intent and leaves the source journal
  assert.equal(out.intents[0].netBefore,'0');assert.equal(out.intents[0].netAfter,'0.01');
  assert.equal(out.sourceEquityQuality,'RECENT_SNAPSHOT_NOT_HISTORICAL_PROOF');
  assert.equal(journal.readAll().length,0);assert.ok(Object.isFrozen(out.intents));
+ assert.equal(out.proposedSourceJournalRecord.fillKey,`${A}:HL:1`);
+ assert.match(out.proposedSourceJournalRecord.fillDigest,/^[a-f0-9]{64}$/);
 });
 
 test('two opposing traders net against the single observed vault position',()=>{

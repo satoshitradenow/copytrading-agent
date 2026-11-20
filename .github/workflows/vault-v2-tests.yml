@@ -51,3 +51,9 @@ jobs:
         env:
           V2_INTEGRATION_CONFIRM: YES_ISOLATED_TEST_DATABASE
           V2_INTEGRATION_DATABASE_URL: postgresql://vault_test:ephemeral_ci_only@127.0.0.1:5432/vault_copy_v2_test
+      - name: Verify real PostgreSQL portfolio batch fencing and uniqueness
+        run: npm run test:postgres:portfolio
+        working-directory: v2
+        env:
+          V2_INTEGRATION_CONFIRM: YES_ISOLATED_TEST_DATABASE
+          V2_INTEGRATION_DATABASE_URL: postgresql://vault_test:ephemeral_ci_only@127.0.0.1:5432/vault_copy_v2_test

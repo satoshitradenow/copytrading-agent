@@ -1,3 +1,14 @@
+# NEW MILESTONE — 2026-11-20: SHADOW PORTFOLIO PENDING-BATCH PERSISTENCE
+
+- `v2/src/pgPortfolioBatchRepository.mjs` adds serialized lease-checked **read-only staging** of netted source events and up to two ordered unsigned leg intents. Source virtual positions are NOT automatically marked filled or committed.
+- `v2/sql/003_portfolio_batches.sql` enforces one unresolved source batch per vault in PostgreSQL and one unique batch per source fill. Replay with incompatible economic evidence fails closed.
+- `v2/test/pgPortfolioBatchRepository.test.mjs` exercises idempotency, stale writers, conflicting fills, pending-batch halt, fake identity, reversal phases and transaction rollback with a SQL mock. Separate `integration/portfolioPostgres.mjs` tests the actual Node/PostgreSQL path in an isolated disposable CI database.
+- **Still deliberately missing:** an independent audited settlement transition that updates the virtual source ledger *only after* real exchange fill evidence and exact observed vault position agreement. No order signing, no exchange writes, no permanent Render worker, no live funds.
+- Previous 5-trader portfolio preview now exposes an immutable source journal record fingerprint to make eventual database promotions deterministic.
+- Verify GitHub Actions result for this commit separately; counts below are historical.
+
+---
+
 # CURRENT MILESTONE — 2026-11-20: FIVE-STRATEGY NETTING (SHADOW ONLY)
 
 - Added pure `portfolioNetting.mjs` with source-event-only projection across five strategy allocations, explicit mainnet/testnet matching, source start-position and recent account/equity observation, vault drift checks on **all markets**, refusal when any prior order remains unresolved, and deterministic split close/open intents for vault net reversals.

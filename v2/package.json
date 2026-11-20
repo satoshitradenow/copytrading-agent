@@ -13,7 +13,8 @@
     "capture": "node src/capture.mjs",
     "watch": "node src/watch.mjs",
     "watch:pg": "node src/watchPg.mjs",
-    "test:postgres": "node integration/leasePostgres.mjs"
+    "test:postgres": "node integration/leasePostgres.mjs",
+    "test:postgres:portfolio": "node integration/portfolioPostgres.mjs"
   },
   "dependencies": {
     "pg": "^8.16.3"

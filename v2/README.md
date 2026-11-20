@@ -219,3 +219,12 @@ The `previewCurrentVaultIntent` function in `src/shadowPreflight.mjs` now connec
 
 **Not production execution:** the portfolio preview is **not atomic** with PostgreSQL source capture, risk approvals, order intents or exchange fills. `portfolioNetting.mjs` doesn't import a signer or execution adapter. The output is an unsigned planning artifact; each leg must pass `shadowPreflight` and fenced durable recording later, with all chain/account assertions repeated. Production must distinguish unexecuted *desired* targets from actual settled exposure.
 
+
+
+## Durable PostgreSQL source-event staging (SHADOW ONLY, 2026-11-20)
+
+The new `src/pgPortfolioBatchRepository.mjs` and `sql/003_portfolio_batches.sql` add a **staged-but-not-settled** source-event batch. A batch records the immutable event/fill fingerprint, previous and proposed aggregate net positions, and up to two deterministic unsigned trade intents. **It deliberately does NOT advance the persistent virtual strategy journal or submit/cancel an order.** This prevents an unfilled, partially filled or rejected exchange order being misrepresented as an executed follower position.
+
+Each staging transaction requires a current PostgreSQL vault writer lease and fencing token; it refuses other unresolved exchange intents. Only one `STAGED` or `REVIEW_REQUIRED` batch can exist for a vault; the database enforces this with a partial unique index. Replay of an identical source fill is idempotent; conflicting source economics, a second pending source fill, stolen/stale writer token, and a mismatched phase order fail closed. The STAGED batch does **not** have a public auto-settlement method. Future production logic must independently verify every exchange fill and actual vault position before atomically promoting both the strategy ledger and batch to SETTLED. **No DB batch alone authorizes a trade.**
+
+`integration/portfolioPostgres.mjs` runs only with the isolated `vault_copy_v2_test` database plus `V2_INTEGRATION_CONFIRM=YES_ISOLATED_TEST_DATABASE`. The GitHub Actions ephemeral PostgreSQL job exercises this test after `test:postgres`, without requiring access to any permanent Neon secrets. No mainnet or testnet order is submitted. The real user's vault address remains absent from repository files.

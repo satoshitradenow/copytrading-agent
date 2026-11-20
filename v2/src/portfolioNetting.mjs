@@ -133,6 +133,11 @@ export class ShadowPortfolioNetting {
     if(result.status==='duplicate')return Object.freeze({mode:'SHADOW_ONLY',status:'DUPLICATE',intents:[],
       sourceFillKey:result.fillKey,virtualLedgerUnchanged:true});
     const after=ledger.snapshot();
+    const journalRows=ledger.journal.readAll();
+    const sourceJournalRecord=journalRows[journalRows.length-1];
+    if(sourceJournalRecord?.fillKey!==result.fillKey ||
+       !/^[a-f0-9]{64}$/.test(sourceJournalRecord.fillDigest||''))
+      throw Error('Missing immutable source journal fingerprint in preview');
     const coin=fill.coin.toUpperCase();
     const intents=splitCrossingIntent({vaultAddress:this.vaultAddress,sourceFillKey:result.fillKey,
       coin,before:before.net[coin]??'0',after:after.net[coin]??'0'});
@@ -142,6 +147,7 @@ export class ShadowPortfolioNetting {
       requiresSequentialSettlement:intents.length>1,intents:Object.freeze(intents),
       expectedNetBefore:Object.freeze({...before.net}),desiredNetAfter:Object.freeze({...after.net}),
       projectedVirtual:Object.freeze({...after.virtual}),
+      proposedSourceJournalRecord:Object.freeze({...sourceJournalRecord}),
       // Source acceptance and the actual exchange fill must be committed
       // transactionally with intent state; this preview grants no authority.
       commitAuthorized:false,executeAuthorized:false,
