@@ -24,7 +24,7 @@ function fake(overrides={}){
    if(sql.includes('FROM v2_settlement_audits'))
     return {rows:structuredClone(db.audits)};
    throw Error('Unexpected recovery SQL');
-  }}};}};
+  }}}}};
 }
 test('missing controls and writer lease always yield a blocked diagnostic',async()=>{
  const {pool,db}=fake();
