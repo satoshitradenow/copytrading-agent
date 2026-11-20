@@ -109,6 +109,7 @@ async function run(){
     // the durable state transition that would precede an external request.
     await lease.release({vaultAddress:vault,writerId:b,fencingToken:'2'});
     await assert.rejects(lease.acquire({vaultAddress:vault,writerId:randomUUID()}),/Unresolved exchange intent/);
+    assert.equal((await intents.unresolvedForVault(vault)).length,1);
     // Independently hold ownership after a crash with a STAGED source batch,
     // even when all execution-intent events were already reconciled.
     await pool.query('DELETE FROM v2_execution_events WHERE intent_id=$1',[intentId]);
@@ -122,7 +123,7 @@ async function run(){
     await assert.rejects(lease.acquire({vaultAddress:vault,writerId:randomUUID()}),
       /Pending source batch blocks writer takeover/);
     await pool.query('DELETE FROM v2_portfolio_batches WHERE vault_address=$1',[vault]);
-    assert.equal((await intents.unresolvedForVault(vault)).length,1);
+    assert.equal((await intents.unresolvedForVault(vault)).length,0);
     process.stdout.write('PASS: isolated PostgreSQL lease fencing, intent transactions, and unresolved-order takeover halt\n');
   }finally{
     // Delete only the unique test vault's rows. Never touch other data.
