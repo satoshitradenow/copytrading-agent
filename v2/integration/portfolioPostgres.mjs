@@ -67,7 +67,16 @@ async function run(){
     assert.equal(firstAudit.report.commitAuthorized,false);
     assert.equal(firstAudit.executeAuthorized,false);
     assert.equal((await auditLog.record(evidence)).idempotent,true);
-    assert.equal((await auditLog.listForReview({batchId:firstBatch,vaultAddress:vault})).length,1);
+    // The same immutable evidence may have both a base status and an
+    // independent detailed-economics review in one chained database journal.
+    const reviewed=await auditLog.recordEconomics(evidence);
+    assert.equal(reviewed.report.classification,'REQUIRES_RECONCILIATION');
+    assert.equal(reviewed.report.commitAuthorized,false);
+    assert.equal((await auditLog.recordEconomics(evidence)).idempotent,true);
+    const chain=await auditLog.listForReview({batchId:firstBatch,vaultAddress:vault});
+    assert.equal(chain.length,2);
+    assert.equal(chain[1].evidence.auditVariant,'FILL_PATH_ECONOMIC_V1');
+    assert.equal(chain[1].report.classification,'REQUIRES_RECONCILIATION');
     assert.equal((await repo.pendingForVault(vault)).length,1);
     await assert.rejects(repo.stage({...one,proposedSourceJournalRecord:{...one.proposedSourceJournalRecord,fillDigest:'a'.repeat(64)}},owner),/Conflicting portfolio batch/);
     const two=plan({...fill,fillId:'HL:TEST2',timeMs:11000});
