@@ -116,3 +116,28 @@ export function summarizePerpFillEconomics({intent,exchangeOrderId,observedFills
   safeToResubmit:false,requiresOperatorReview:true,
   caveat:'Totals cover only matched, uniquely observed fills; no funding, unobserved fills, margin movements, or full PnL assurance'});
 }
+
+/**
+ * Return the exact canonical per-trade economics used by the read-only
+ * summary. Allows an independently indexed review to detect the same
+ * exchange TID being attributed to multiple source events or mutated after
+ * a crash/restart. The summary validation also rejects missing/inexact fees,
+ * overfills and duplicate trade IDs with conflicting economics.
+ */
+export function listValidatedPerpOrderFills(args={}){
+ const summary=summarizePerpFillEconomics(args);
+ const {intent,observedFills,feeToken='USDC'}=args;
+ const unique=new Map();
+ for(const raw of observedFills){
+  if(oid(raw.oid,'observed order ID')!==summary.exchangeOrderId)continue;
+  const found=fillRecord(raw,{intent,exchangeOrderId:summary.exchangeOrderId,feeToken});
+  const key=found.base.tradeId,prev=unique.get(key);
+  if(prev!==undefined && JSON.stringify(prev)!==JSON.stringify(found.base))
+   throw Error('Conflicting economics for replayed exchange TID');
+  unique.set(key,found.base);
+ }
+ if(unique.size!==summary.fillCount)throw Error('Fill registry disagrees with validated order size');
+ return Object.freeze([...unique.values()]
+   .sort((a,b)=>BigInt(a.tradeId)<BigInt(b.tradeId)?-1:BigInt(a.tradeId)>BigInt(b.tradeId)?1:0)
+   .map(f=>Object.freeze({...f})));
+}
