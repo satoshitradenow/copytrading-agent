@@ -20,3 +20,10 @@ test('no periodic pollLoop remains with synthetic target-position correction tra
  assert.doesNotMatch(source,/\bawait tradeExecutor\.syncWithLeader\(/);
  assert.doesNotMatch(source,/\bsetTimeout as delay\b/);
 });
+
+test('integration branch never starts a live source-to-exchange sync daemon',()=>{
+ const guard=source.indexOf('throw new Error("Vault integration execution is not authorized');
+ const config=source.indexOf('const config = loadConfig()');
+ assert.ok(guard>0 && guard<config,
+  'review-only guard must run before loading signing credentials or creating clients');
+});
