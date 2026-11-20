@@ -180,3 +180,10 @@ The v2 shadow intent repository now **rejects `SUBMISSION_STARTED` through the g
 A separate fix prevents cross-order approval replay: `assessShadowVaultRisk()` now returns an `intentId` derived from the exact validated order specification, and `RISK_APPROVED` requires that exact `intentId`. It also fails closed on a mismatch between the intent vault and the snapshot vault. Added 8 local regression tests; existing GitHub Actions workflow will test this against the full suite.
 
 **This is only shadow-only ledger preparation.** It never sends an order; it does not create exchange-side fencing or make an already-in-flight HTTP request safe. The real PostgreSQL integration test and live testnet authorization are separate, still-pending gates.
+
+
+## Public vault identity checks (no signer)
+
+Use `npm run inspect -- HL:0xYOUR_PUBLIC_VAULT_ADDRESS`, or set `V2_VAULT_ADDRESS` privately in the runtime environment. Both a raw `0x...` address and Hyperliquid's user-facing `HL:0x...` label are accepted; the prefix is stripped before requesting public `/info` data. Do **not** commit personal vault addresses to example configuration files.
+
+For stronger verification, optionally set `V2_EXPECTED_VAULT_LEADER` (full 42-character 0x public address) and `V2_EXPECTED_VAULT_NAME`. The inspector fails closed on an address, leader, or name mismatch. Its output always states `signingAuthorityVerified:false`: public vault data **cannot** prove the API agent may trade in that vault. Do not confuse a vault's UI-level capital summary with available cross-margin equity, and do not permit trading based on a read-only inspection.
