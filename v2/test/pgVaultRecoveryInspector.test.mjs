@@ -120,3 +120,10 @@ test('report only accepts an exact vault identity and has no arming API',async()
  assert.equal(typeof r.resume,'undefined');
  assert.equal(typeof r.settle,'undefined');
 });
+
+test('an invalid Date lease expiry cannot be silently treated as a valid owner',async()=>{
+ const {pool}=fake({lease:{vault_address:V,writer_id:'worker',
+  fencing_token:'3',expires_at:new Date('bad-date'),active:true}});
+ await assert.rejects(new PgVaultRecoveryInspector(pool).inspect({vaultAddress:V}),
+  /Corrupt writer lease/);
+});
