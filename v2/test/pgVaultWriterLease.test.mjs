@@ -9,7 +9,7 @@ const clone=x=>structuredClone(x);
 
 /** Scoped deterministic SQL fake: does NOT claim real-Postgres integration. */
 function mockPool(){
- const db={leases:new Map(),unresolved:new Set(),time:Date.parse('2026-11-19T10:00:00.000Z'),commits:0,rollbacks:0,failOn:null};
+ const db={leases:new Map(),unresolved:new Set(),pendingBatches:new Set(),time:Date.parse('2026-11-19T10:00:00.000Z'),commits:0,rollbacks:0,failOn:null};
  function leaseRow(row){return row?{...clone(row),expires_at:new Date(row.expires_at),expired:row.expires_at<=db.time}:null;}
  const pool={db,connect:async()=>{
    let stage=null;
@@ -25,6 +25,10 @@ function mockPool(){
      }
      if(q.startsWith('SELECT intent_id FROM v2_execution_intents')){
        return{rowCount:db.unresolved.has(args[0])?1:0,rows:db.unresolved.has(args[0])?[{intent_id:'pending'}]:[]};
+     }
+     if(q.startsWith('SELECT batch_id FROM v2_portfolio_batches')){
+       return{rowCount:db.pendingBatches.has(args[0])?1:0,
+        rows:db.pendingBatches.has(args[0])?[{batch_id:'f'.repeat(64)}]:[]};
      }
      if(q.startsWith('INSERT INTO v2_vault_writer_leases')){
        const [vault_address,writer_id,ttl]=args;
@@ -139,4 +143,36 @@ test('no lease is silently granted after database failure during unresolved chec
  const p=mockPool(),repo=new PgVaultWriterLease(p);p.db.failOn='SELECT intent_id FROM v2_execution_intents';
  await assert.rejects(repo.acquire(args()),/Simulated PostgreSQL failure/);
  assert.equal(p.db.leases.size,0);assert.equal(p.db.rollbacks,1);
+});
+test('a STAGED source batch blocks lease takeover even with no execution intent',async()=>{
+ const p=mockPool(),repo=new PgVaultWriterLease(p);
+ const first=await repo.acquire(args());
+ p.db.time+=20000;
+ p.db.pendingBatches.add(VAULT);
+ await assert.rejects(repo.acquire(args(B)),/Pending source batch blocks writer takeover/);
+ assert.equal(p.db.leases.get(VAULT).fencing_token,first.fencingToken);
+ p.db.pendingBatches.delete(VAULT);
+ const replacement=await repo.acquire(args(B));
+ assert.equal(replacement.fencingToken,'2');
+});
+test('initial lease acquisition is blocked by any existing staged source batch',async()=>{
+ const p=mockPool(),repo=new PgVaultWriterLease(p);
+ p.db.pendingBatches.add(VAULT);
+ await assert.rejects(repo.acquire(args()),/Pending source batch/);
+ assert.equal(p.db.leases.size,0);
+});
+test('a missing pending-batch table or DB outage cannot grant a new writer',async()=>{
+ const p=mockPool(),repo=new PgVaultWriterLease(p);
+ p.db.failOn='SELECT batch_id FROM v2_portfolio_batches';
+ await assert.rejects(repo.acquire(args()),/Simulated PostgreSQL failure/);
+ assert.equal(p.db.leases.size,0);
+ assert.equal(p.db.rollbacks,1);
+});
+test('FILLED remains unresolved until portfolio reconciliation; no lease takeover',async()=>{
+ const p=mockPool(),repo=new PgVaultWriterLease(p);
+ const first=await repo.acquire(args());
+ p.db.time+=20000;
+ p.db.unresolved.add(VAULT);
+ await assert.rejects(repo.acquire(args(B)),/Unresolved exchange intent/);
+ assert.equal(p.db.leases.get(VAULT).fencing_token,first.fencingToken);
 });

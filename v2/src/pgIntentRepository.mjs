@@ -16,7 +16,7 @@ const clone=x=>structuredClone(x);
 const WRITER_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const TOKEN = /^[1-9][0-9]{0,18}$/;
 const MAX_TOKEN = (1n<<63n)-1n;
-const IN_FLIGHT = ['SUBMITTING','UNKNOWN','ACKED','PARTIAL','REVIEW_REQUIRED'];
+const IN_FLIGHT = ['SUBMITTING','UNKNOWN','ACKED','PARTIAL','FILLED','REVIEW_REQUIRED'];
 const MAX_RISK_CHECK_AGE_MS=1000;
 const MAX_APPROVAL_AGE_MS=10000;
 function assertOwner({writerId,fencingToken}={}){
@@ -205,7 +205,7 @@ export class PgIntentRepository {
       SELECT intent_id,client_order_id,state,version,last_event_hash
       FROM v2_execution_intents
       WHERE vault_address=$1
-        AND (state->>'status') IN ('SUBMITTING','UNKNOWN','ACKED','PARTIAL','REVIEW_REQUIRED')
+        AND (state->>'status') IN ('SUBMITTING','UNKNOWN','ACKED','PARTIAL','FILLED','REVIEW_REQUIRED')
       ORDER BY created_at`,[v]);
     return result.rows.map(asState);
   }

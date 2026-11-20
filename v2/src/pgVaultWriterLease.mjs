@@ -9,14 +9,14 @@
  * uncertain exchange result. An active DB lease alone is NOT sufficient.
  *
  * Requires v2_vault_writer_leases and v2_execution_intents from
- * sql/002_execution_ledger.sql. All expiry decisions use PostgreSQL's clock.
+ * sql/002_execution_ledger.sql and v2_portfolio_batches from sql/003_portfolio_batches.sql. All expiry decisions use PostgreSQL's clock.
  */
 import {validateAddress} from './hyperliquidRead.mjs';
 
 const WRITER_ID=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const FENCE=/^[1-9][0-9]{0,18}$/;
 const MAX_BIGINT=(1n<<63n)-1n;
-const UNRESOLVED=['SUBMITTING','UNKNOWN','ACKED','PARTIAL','REVIEW_REQUIRED'];
+const UNRESOLVED=['SUBMITTING','UNKNOWN','ACKED','PARTIAL','FILLED','REVIEW_REQUIRED'];
 
 function checkWriter(writerId){
   if(typeof writerId!=='string'||!WRITER_ID.test(writerId))throw Error('Unique per-process UUID writerId required');
@@ -80,6 +80,14 @@ export class PgVaultWriterLease {
         WHERE vault_address=$1 AND (state->>'status')=ANY($2::text[])
         LIMIT 1`,[vault,UNRESOLVED]);
       if(unresolved.rows.length)throw Error('Unresolved exchange intent blocks writer takeover');
+      // A fully FILLED order can still be financially un-settled. A staged
+      // source event is a durable freeze, even if no execution intent exists.
+      // This lookup is intentionally inside the same SERIALIZABLE transaction.
+      const pending=await client.query(`
+        SELECT batch_id FROM v2_portfolio_batches
+        WHERE vault_address=$1 AND status IN ('STAGED','REVIEW_REQUIRED')
+        LIMIT 1`,[vault]);
+      if(pending.rows.length)throw Error('Pending source batch blocks writer takeover until independent settlement');
       if(selected.rows.length===0){
         const inserted=await client.query(`
           INSERT INTO v2_vault_writer_leases

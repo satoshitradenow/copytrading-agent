@@ -36,6 +36,8 @@ async function run(){
     if(name.rows.length!==1||name.rows[0].name!=='vault_copy_v2_test')throw Error('Server database does not match explicit test DB');
     const sql=await readFile(new URL('../sql/002_execution_ledger.sql',import.meta.url),'utf8');
     await pool.query(sql); // DDL permitted only in independently named isolated test database.
+    const portfolioSchema=await readFile(new URL('../sql/003_portfolio_batches.sql',import.meta.url),'utf8');
+    await pool.query(portfolioSchema);
     const emergencySchema=await readFile(new URL('../sql/004_emergency_stop.sql',import.meta.url),'utf8');
     await pool.query(emergencySchema);
     const lease=new PgVaultWriterLease(pool),intents=new PgIntentRepository(pool);
@@ -107,11 +109,25 @@ async function run(){
     // the durable state transition that would precede an external request.
     await lease.release({vaultAddress:vault,writerId:b,fencingToken:'2'});
     await assert.rejects(lease.acquire({vaultAddress:vault,writerId:randomUUID()}),/Unresolved exchange intent/);
+    // Independently hold ownership after a crash with a STAGED source batch,
+    // even when all execution-intent events were already reconciled.
+    await pool.query('DELETE FROM v2_execution_events WHERE intent_id=$1',[intentId]);
+    await pool.query('DELETE FROM v2_execution_intents WHERE vault_address=$1',[vault]);
+    const fabricatedBatch='a'.repeat(64);
+    await pool.query(`INSERT INTO v2_portfolio_batches
+      (batch_id,vault_address,network,source_fill_key,source_record,
+       expected_net_before,desired_net_after,planned_legs,status)
+      VALUES ($1,$2,'testnet','isolated:lease-freeze','{}'::jsonb,'{}'::jsonb,'{}'::jsonb,'[]'::jsonb,'STAGED')`,
+      [fabricatedBatch,vault]);
+    await assert.rejects(lease.acquire({vaultAddress:vault,writerId:randomUUID()}),
+      /Pending source batch blocks writer takeover/);
+    await pool.query('DELETE FROM v2_portfolio_batches WHERE vault_address=$1',[vault]);
     assert.equal((await intents.unresolvedForVault(vault)).length,1);
     process.stdout.write('PASS: isolated PostgreSQL lease fencing, intent transactions, and unresolved-order takeover halt\n');
   }finally{
     // Delete only the unique test vault's rows. Never touch other data.
     try{
+      await pool.query('DELETE FROM v2_portfolio_batches WHERE vault_address=$1',[vault]);
       if(intentId)await pool.query('DELETE FROM v2_execution_events WHERE intent_id=$1',[intentId]);
       await pool.query('DELETE FROM v2_execution_intents WHERE vault_address=$1',[vault]);
       await pool.query('DELETE FROM v2_vault_execution_controls WHERE vault_address=$1',[vault]);

@@ -163,6 +163,9 @@ async function run(){
     await assert.rejects(auditLog.recordEconomics(crossBatch),
       /Observed exchange TID collision, changed economic fields/);
     assert.equal((await repo.pendingForVault(vault)).length,1);
+    await leases.release({vaultAddress:vault,writerId:owner.writerId,fencingToken:owner.fencingToken});
+    await assert.rejects(leases.acquire({vaultAddress:vault,writerId:randomUUID()}),
+      /Pending source batch blocks writer takeover/);
     const stillOne=await pool.query('SELECT batch_id FROM v2_observed_exchange_fills WHERE vault_address=$1',[vault]);
     assert.equal(stillOne.rows.length,1);
     assert.equal(stillOne.rows[0].batch_id,firstBatch);
