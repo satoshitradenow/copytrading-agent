@@ -11,6 +11,7 @@ import {ShadowPortfolioNetting} from '../src/portfolioNetting.mjs';
 import {MemoryJournal} from '../src/ledger.mjs';
 import {PgPortfolioBatchRepository} from '../src/pgPortfolioBatchRepository.mjs';
 import {PgSettlementAuditLog} from '../src/pgSettlementAuditLog.mjs';
+import {PgVaultRecoveryInspector} from '../src/pgVaultRecoveryInspector.mjs';
 import {PgVaultWriterLease} from '../src/pgVaultWriterLease.mjs';
 
 function guardedConnection(){
@@ -36,6 +37,8 @@ async function run(){
     const ddl3=await readFile(new URL('../sql/003_portfolio_batches.sql',import.meta.url),'utf8');
     await pool.query(ddl2);
     await pool.query(ddl3);
+    const ddl4=await readFile(new URL('../sql/004_emergency_stop.sql',import.meta.url),'utf8');
+    await pool.query(ddl4);
     const ddl5=await readFile(new URL('../sql/005_settlement_audits.sql',import.meta.url),'utf8');
     await pool.query(ddl5);
     const ddl6=await readFile(new URL('../sql/006_observed_exchange_fills.sql',import.meta.url),'utf8');
@@ -56,6 +59,14 @@ async function run(){
     const persisted=await repo.readForAudit({batchId:firstBatch,vaultAddress:vault});
     assert.equal(persisted.persistedStatus,'STAGED');
     assert.deepEqual(persisted.intents.map(x=>x.intentId),one.intents.map(x=>x.intentId));
+    const recovery=new PgVaultRecoveryInspector(pool);
+    const frozen=await recovery.inspect({vaultAddress:vault});
+    assert.equal(frozen.halted,true);
+    assert.equal(frozen.pendingBatch.batchId,firstBatch);
+    assert.ok(frozen.blockingReasons.includes('MISSING_EXECUTION_CONTROL_HALTED_BY_DEFAULT'));
+    assert.ok(frozen.blockingReasons.includes('PENDING_SOURCE_BATCH'));
+    assert.ok(frozen.blockingReasons.includes('MISSING_SETTLEMENT_EVIDENCE'));
+    assert.equal(frozen.readyToResumeTrading,false);
     assert.equal(persisted.executeAuthorized,false);
     // Write an explicitly incomplete audit of the proposed leg into real
     // PostgreSQL. It remains review-only and MUST NOT settle the batch.
@@ -112,6 +123,11 @@ async function run(){
     await assert.rejects(auditLog.recordEconomics(manipulated),
       /Observed exchange TID collision, changed economic fields/);
     assert.equal((await repo.readForAudit({batchId:firstBatch,vaultAddress:vault})).persistedStatus,'STAGED');
+    const reviewedRecovery=await recovery.inspect({vaultAddress:vault});
+    assert.equal(reviewedRecovery.pendingBatch.auditIntegrityVerified,false);
+    assert.equal(reviewedRecovery.pendingBatch.lastAuditSequence,'3');
+    assert.ok(reviewedRecovery.blockingReasons.includes('SETTLEMENT_EVIDENCE_REQUIRES_INDEPENDENT_CHAIN_VERIFICATION'));
+    assert.equal(reviewedRecovery.readyToResumeTrading,false);
     assert.equal((await repo.pendingForVault(vault)).length,1);
     await assert.rejects(repo.stage({...one,proposedSourceJournalRecord:{...one.proposedSourceJournalRecord,fillDigest:'a'.repeat(64)}},owner),/Conflicting portfolio batch/);
     const two=plan({...fill,fillId:'HL:TEST2',timeMs:11000});
