@@ -1,3 +1,13 @@
+# VERIFIED EMERGENCY-STOP BUILD — 2026-11-20
+
+**Commit:** `6ee37157f1c9224348b78b16c39c71d946daa30c`. **251/251 Node 22 tests passed** and **both disposable real PostgreSQL integration scripts passed** in [GitHub Actions run 44681368931](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44681368931).
+
+A database-level per-vault HALT is now enforced under the same serializable transaction as the writer lease and `SUBMISSION_STARTED` recording. The row defaults to halted, missing rows block, and `PgEmergencyStop.halt()` is intentionally one-way, independent of the writer. There is no generic arm API. HALT cannot recall already-sent exchange orders; a future live adapter must recheck immediately before sending and reconcile resting/in-flight exchange orders.
+
+**Still strictly SHADOW-ONLY:** no signer, agent authorization, live order submission, account settlement promotion, mainnet funds, or new Render deployment. Main remaining gates: at-fill equity policy, all five verified traders, exchange/testnet vault authority, end-to-end settlement integration, emergency exchange cancellation and sustained shadow operation.
+
+---
+
 # NEW MILESTONE — 2026-11-20: DATABASE EMERGENCY HALT
 
 - Added one-way `PgEmergencyStop.halt()` and per-vault `v2_vault_execution_controls` with default HALTED; missing control row cannot enable submission.
