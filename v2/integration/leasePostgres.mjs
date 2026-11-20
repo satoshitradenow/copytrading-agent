@@ -53,6 +53,15 @@ async function run(){
     const input={mode:'SHADOW_ONLY',vaultAddress:vault,fillKey:`source:${randomBytes(8).toString('hex')}`,
       coin:'BTC',side:'buy',size:'0.01',netBefore:'0',netAfter:'0.01'};
     const item=await intents.propose(input);intentId=item.intentId;
+    // The same source fill must never create a different order.
+    await assert.rejects(intents.propose({...input,size:'0.02',netAfter:'0.02'}),
+      /different order|maps to different order/);
+    assert.equal((await intents.get(item.intentId)).status,'DRAFT');
+    // A receipt for any other intent may not authorize this one.
+    await assert.rejects(intents.transition(item.intentId,{type:'RISK_APPROVED',atMs:Date.now(),
+      receipt:{mode:'SHADOW_ONLY',allowed:true,intentId:'0'.repeat(64),vaultAddress:vault,
+        coin:'BTC',requiresReduceOnly:false}}),/receipt disagrees/);
+
     // Approval is bound to the exact intent, never just the market or vault.
     const approvedAt=Date.now();
     await intents.transition(item.intentId,{type:'RISK_APPROVED',atMs:approvedAt,
@@ -66,6 +75,11 @@ async function run(){
     // atomically by beginSubmission(). NO external exchange request occurs.
     await lease.renew({vaultAddress:vault,writerId:b,fencingToken:'2',ttlMs:15000});
     const submissionAt=Date.now();
+    // An expired/replaced writer cannot prepare a submission.
+    await assert.rejects(intents.beginSubmission(item.intentId,{
+      type:'SUBMISSION_STARTED',atMs:submissionAt,clientOrderId:item.clientOrderId,
+      riskRecheckedAtMs:submissionAt
+    },{vaultAddress:vault,writerId:a,fencingToken:'1'}),/Lease lost|expired/);
     const submitting=await intents.beginSubmission(item.intentId,{
       type:'SUBMISSION_STARTED',atMs:submissionAt,clientOrderId:item.clientOrderId,
       riskRecheckedAtMs:submissionAt
