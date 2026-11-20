@@ -6,8 +6,8 @@ import {validateStagedPortfolioPreview} from '../src/pgPortfolioBatchRepository.
 import {PgSettlementAuditLog} from '../src/pgSettlementAuditLog.mjs';
 
 const VAULT='0x'+'9'.repeat(40),TRADER='0x'+'1'.repeat(40);
-function setup(){
- const fill={trader:TRADER,fillId:'HL:AUDIT',coin:'BTC',side:'buy',size:'1',
+function setup(fillId='HL:AUDIT'){
+ const fill={trader:TRADER,fillId,coin:'BTC',side:'buy',size:'1',
   priceUsd:'50000',sourceStartPosition:'0',timeMs:100000};
  const plan=new ShadowPortfolioNetting({vaultAddress:VAULT,
   traders:[{address:TRADER,allocationUsd:'1000',maxVirtualLeverage:5,enabled:true}],
@@ -39,14 +39,14 @@ function poolFor(preview){
  const db={batch:{batch_id:spec.batchId,vault_address:VAULT,network:spec.network,
    source_fill_key:spec.sourceFillKey,source_record:spec.sourceRecord,
    expected_net_before:spec.expectedNetBefore,desired_net_after:spec.desiredNetAfter,
-   planned_legs:spec.legs,status:'STAGED'},logs:[],rollbacks:0,commits:0,failInsert:false};
- const query=async(q,args,working)=>{
+   planned_legs:spec.legs,status:'STAGED'},logs:[],fillClaims:[],rollbacks:0,commits:0,failInsert:false};
+ const query=async(q,args,working,workingClaims)=>{
   if(q.startsWith('SELECT batch_id,vault_address,network,source_fill_key')){
    return {rows:db.batch&&db.batch.batch_id===args[0]&&db.batch.vault_address===args[1]
     ?[structuredClone(db.batch)]:[]};
   }
   if(q.startsWith('SELECT batch_id,audit_seq,vault_address,evidence_digest')){
-   return {rows:structuredClone(working??db.logs)};
+   return {rows:structuredClone((working??db.logs).filter(x=>x.batch_id===args[0]))};
   }
   if(q.startsWith('INSERT INTO v2_settlement_audits')){
    if(db.failInsert)throw Error('Simulated INSERT failure');
@@ -56,18 +56,39 @@ function poolFor(preview){
     previous_chain_hash,chain_hash,evidence:JSON.parse(evidence),audit_report:JSON.parse(audit_report)});
    return {rowCount:1,rows:[{audit_seq}]};
   }
+  if(q.startsWith('INSERT INTO v2_observed_exchange_fills')){
+   const [network,vault_address,trade_id,batch_id,client_order_id,exchange_order_id,economic_digest,economic_record]=args;
+   const claims=workingClaims??db.fillClaims;
+   if(claims.some(x=>x.network===network&&x.vault_address===vault_address&&x.trade_id===trade_id))
+    return {rowCount:0,rows:[]};
+   claims.push({network,vault_address,trade_id,batch_id,client_order_id,
+    exchange_order_id,economic_digest,economic_record:JSON.parse(economic_record)});
+   return {rowCount:1,rows:[{trade_id}]};
+  }
+  if(q.startsWith('SELECT network,vault_address,trade_id,batch_id')){
+   const [network,vault_address,trade_id]=args;
+   return {rows:structuredClone((workingClaims??db.fillClaims).filter(x=>
+    x.network===network&&x.vault_address===vault_address&&x.trade_id===trade_id))};
+  }
   throw Error('Unexpected audit SQL '+q.slice(0,75));
  };
  return {db,pool:{
-  query:async(q,args=[])=>query(q,args,null),
+  query:async(q,args=[])=>query(q,args,null,null),
   connect:async()=>{
-   let working=null;
+   let working=null,workingClaims=null;
    return {release(){},async query(q,args=[]){
-    if(q.startsWith('BEGIN')){working=structuredClone(db.logs);return {rows:[]};}
-    if(q==='COMMIT'){db.logs=working;db.commits++;working=null;return {rows:[]};}
-    if(q==='ROLLBACK'){db.rollbacks++;working=null;return {rows:[]};}
+    if(q.startsWith('BEGIN')){
+     working=structuredClone(db.logs);workingClaims=structuredClone(db.fillClaims);return {rows:[]};
+    }
+    if(q==='COMMIT'){
+     db.logs=working;db.fillClaims=workingClaims;db.commits++;
+     working=null;workingClaims=null;return {rows:[]};
+    }
+    if(q==='ROLLBACK'){
+     db.rollbacks++;working=null;workingClaims=null;return {rows:[]};
+    }
     if(working===null)throw Error('Outside transaction');
-    return query(q,args,working);
+    return query(q,args,working,workingClaims);
    }};
   }
  }};
@@ -175,4 +196,68 @@ test('unknown audit variant can never be silently interpreted as the older algor
  db.logs[0].evidence.auditVariant='FUTURE_UNSUPPORTED';
  await assert.rejects(repo.listForReview({batchId:preview.batchId,vaultAddress:VAULT}),
   /Unknown settlement review algorithm version/);
+});
+
+function completeEconomicArgs(preview,patch={}){
+ const args=request(preview,[fullReport(preview)]),leg=preview.intents[0];
+ Object.assign(args.legReports[0].observedFills[0],{
+  px:'50000',fee:'0.2',feeToken:'USDC',closedPnl:'0',
+  startPosition:leg.netBefore,crossed:true,...patch
+ });
+ return args;
+}
+test('verified exchange TID claims are persisted atomically with an economic review',async()=>{
+ const p=setup(),{db,pool}=poolFor(p),audits=new PgSettlementAuditLog(pool);
+ const first=await audits.recordEconomics(completeEconomicArgs(p));
+ assert.equal(first.report.classification,'ECONOMIC_PATH_CORROBORATED_BUT_NOT_SETTLED');
+ assert.equal(db.logs.length,1);assert.equal(db.fillClaims.length,1);
+ assert.equal(db.fillClaims[0].batch_id,p.batchId);
+ assert.equal(db.fillClaims[0].trade_id,'21');
+ assert.equal(db.fillClaims[0].economic_record.fee,'0.2');
+ assert.equal((await audits.recordEconomics(completeEconomicArgs(p))).idempotent,true);
+ assert.equal(db.logs.length,1);assert.equal(db.fillClaims.length,1);
+ assert.equal((await audits.listForReview({batchId:p.batchId,vaultAddress:VAULT})).length,1);
+});
+test('same exchange trade TID with edited fee or identity is blocked even within same batch',async()=>{
+ const p=setup(),{db,pool}=poolFor(p),audits=new PgSettlementAuditLog(pool);
+ await audits.recordEconomics(completeEconomicArgs(p));
+ const dirty=completeEconomicArgs(p,{fee:'0.99'});
+ await assert.rejects(audits.recordEconomics(dirty),
+  /Observed exchange TID collision, changed economic fields/);
+ assert.equal(db.logs.length,1);assert.equal(db.fillClaims.length,1);
+ assert.equal(db.rollbacks,1);
+});
+test('same exchange TID cannot be attributed to two different source fill batches',async()=>{
+ const first=setup(),{db,pool}=poolFor(first),audits=new PgSettlementAuditLog(pool);
+ await audits.recordEconomics(completeEconomicArgs(first));
+ const next=setup('HL:INDEPENDENT-SOURCE-FILL'),b=validateStagedPortfolioPreview(next);
+ assert.notEqual(first.batchId,next.batchId);
+ db.batch={batch_id:b.batchId,vault_address:VAULT,network:b.network,
+  source_fill_key:b.sourceFillKey,source_record:b.sourceRecord,
+  expected_net_before:b.expectedNetBefore,desired_net_after:b.desiredNetAfter,
+  planned_legs:b.legs,status:'STAGED'};
+ await assert.rejects(audits.recordEconomics(completeEconomicArgs(next)),
+  /Observed exchange TID collision, changed economic fields/);
+ assert.equal(db.logs.length,1);assert.equal(db.fillClaims.length,1);
+ assert.equal(db.fillClaims[0].batch_id,first.batchId);
+});
+test('tampered or deleted fill registry row invalidates a historically valid review',async()=>{
+ const p=setup(),{db,pool}=poolFor(p),audits=new PgSettlementAuditLog(pool);
+ await audits.recordEconomics(completeEconomicArgs(p));
+ const original=structuredClone(db.fillClaims[0]);
+ db.fillClaims[0].economic_record.fee='999';
+ await assert.rejects(audits.listForReview({batchId:p.batchId,vaultAddress:VAULT}),
+  /Observed exchange TID collision, changed economic fields/);
+ db.fillClaims[0]=original;
+ db.fillClaims.splice(0);
+ await assert.rejects(audits.record(completeEconomicArgs(p)),
+  /missing registry record/);
+ assert.equal(db.logs.length,1);
+});
+test('failed audit insert rolls back the new fill claim along with the report',async()=>{
+ const p=setup(),{db,pool}=poolFor(p),audits=new PgSettlementAuditLog(pool);
+ db.failInsert=true;
+ await assert.rejects(audits.recordEconomics(completeEconomicArgs(p)),/INSERT failure/);
+ assert.equal(db.logs.length,0);assert.equal(db.fillClaims.length,0);
+ assert.equal(db.rollbacks,1);
 });
