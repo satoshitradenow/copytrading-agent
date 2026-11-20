@@ -10,7 +10,7 @@ const readers=()=>({
  readVaultPublicState:async()=>({mode:'READ_ONLY',vaultAddress:V,leader:L,name:'TEST VAULT',accountValueUsd:'10000',positions:[]}),
  readVaultRiskInputs:async()=>({mode:'READ_ONLY',network:'mainnet',vaultAddress:V,accountValueUsd:'10000',asOfMs:t,positions:{BTC:'0'},marks:{BTC:'50000'}}),
  readMainPerpMetadata:async()=>({mode:'READ_ONLY',network:'mainnet',observedAtMs:t,meta:{universe:[{name:'BTC',szDecimals:5,maxLeverage:40}]}}),
- readVaultAssetLeverage:async()=>({mode:'cross',network:'mainnet',vaultAddress:V,coin:'BTC',value:2,asOfMs:t,source:'activeAssetData',signingAuthorityVerified:false})
+ readVaultAssetLeverage:async()=>({mode:'cross',network:'mainnet',vaultAddress:V,coin:'BTC',value:2,asOfMs:t,maxTradeSzs:['100','100'],source:'activeAssetData',signingAuthorityVerified:false})
 });
 const start=(changes={})=>previewCurrentVaultIntent({intent,riskPolicy,executionPolicy,clock:()=>t+1000,
  expectedLeader:L,expectedName:'TEST VAULT',readers:readers(),...changes});

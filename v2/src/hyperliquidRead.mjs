@@ -166,8 +166,10 @@ export async function readVaultAssetLeverage(vaultAddress,coin,options={}){
      typeof data.user!=='string' || validateAddress(data.user)!==vault ||
      data.coin!==coin ||
      !['cross','isolated'].includes(data.leverage?.type) ||
-     !Number.isSafeInteger(data.leverage.value)||data.leverage.value<1||data.leverage.value>100)
+     !Number.isSafeInteger(data.leverage.value)||data.leverage.value<1||data.leverage.value>100 ||
+     !Array.isArray(data.maxTradeSzs)||data.maxTradeSzs.length!==2 ||
+     data.maxTradeSzs.some(v=>typeof v!=='string'||v.length>60||! /^(?:0|[1-9]\d*)(?:\.\d{1,24})?$/.test(v)))
     throw Error('Malformed or mismatched active asset leverage; fail closed');
   return {mode:data.leverage.type,value:data.leverage.value,asOfMs:observedAtMs,
-    vaultAddress:vault,coin,network:options.network??'mainnet',source:'activeAssetData',signingAuthorityVerified:false};
+    vaultAddress:vault,coin,maxTradeSzs:[...data.maxTradeSzs],network:options.network??'mainnet',source:'activeAssetData',signingAuthorityVerified:false};
 }

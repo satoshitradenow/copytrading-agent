@@ -8,7 +8,7 @@ const t=1800000000000;
 const meta={universe:[{name:'BTC',szDecimals:5,maxLeverage:40},{name:'ETH',szDecimals:4,maxLeverage:25}]};
 const intent=(p={})=>({mode:'SHADOW_ONLY',vaultAddress:V,fillKey:'source:1000',coin:'BTC',side:'buy',size:'0.001',netBefore:'0',netAfter:'0.001',...p});
 const prepare=(changes={})=>{
- const {intent:i=intent(),meta:m=meta,metaNetwork='mainnet',mark='50000',at=t,now=t+1000,leverage={mode:'cross',value:2,asOfMs:t,network:'mainnet'},
+ const {intent:i=intent(),meta:m=meta,metaNetwork='mainnet',mark='50000',at=t,now=t+1000,leverage={mode:'cross',value:2,asOfMs:t,network:'mainnet',maxTradeSzs:['100','100']},
    policy={network:'mainnet',maxSlippageBps:50,maxSnapshotAgeMs:3000,expectedLeverage:2,minNotionalUsd:'10'},receipt,
    vaultSnapshot:vaultState,riskPolicy:riskLimits} = changes;
  const spec=validateIntentSpec(i);
@@ -76,11 +76,11 @@ test('blocked approval cannot be used even if other fields match',()=>{
 test('stale and future timestamp rejected',()=>{
  assert.throws(()=>prepare({now:t+4000}),/Stale|risk approval/);
  assert.throws(()=>prepare({now:t-1}),/Stale|snapshot clock/);
- assert.throws(()=>prepare({leverage:{mode:'cross',value:2,asOfMs:t-10000,network:'mainnet'}}),/[Ll]everage/);
+ assert.throws(()=>prepare({leverage:{mode:'cross',value:2,asOfMs:t-10000,network:'mainnet',maxTradeSzs:['100','100']}}),/[Ll]everage/);
 });
 test('manual change in cross leverage or margin mode prevents preview',()=>{
- assert.throws(()=>prepare({leverage:{mode:'cross',value:3,asOfMs:t,network:'mainnet'}}),/[Ll]everage/);
- assert.throws(()=>prepare({leverage:{mode:'isolated',value:2,asOfMs:t,network:'mainnet'}}),/[Ll]everage/);
+ assert.throws(()=>prepare({leverage:{mode:'cross',value:3,asOfMs:t,network:'mainnet',maxTradeSzs:['100','100']}}),/[Ll]everage/);
+ assert.throws(()=>prepare({leverage:{mode:'isolated',value:2,asOfMs:t,network:'mainnet',maxTradeSzs:['100','100']}}),/[Ll]everage/);
 });
 test('unsupported network, absurd slippage and excessive leverage blocked',()=>{
  const policy={network:'mainnet',maxSlippageBps:50,maxSnapshotAgeMs:3000,expectedLeverage:2,minNotionalUsd:'10'};
@@ -159,6 +159,21 @@ test('property: 600 deterministic random legal perp prices never break tick or s
 
 test('mainnet/testnet observation mixing fails closed before any order preview',()=>{
  assert.throws(()=>prepare({metaNetwork:'testnet'}),/network/);
- assert.throws(()=>prepare({leverage:{mode:'cross',value:2,asOfMs:t,network:'testnet'}}),/network/);
+ assert.throws(()=>prepare({leverage:{mode:'cross',value:2,asOfMs:t,network:'testnet',maxTradeSzs:['100','100']}}),/network/);
  assert.throws(()=>prepare({vaultSnapshot:{network:'testnet',vaultAddress:V,accountValueUsd:'10000',asOfMs:t,positions:{BTC:'0'},marks:{BTC:'50000'}}}),/network/);
+});
+
+test('exchange-side max buy capacity blocks entry before any order exists',()=>{
+ assert.throws(()=>prepare({leverage:{mode:'cross',value:2,network:'mainnet',asOfMs:t,maxTradeSzs:['0.0009','5']}}),/exceeds live vault/);
+});
+test('exchange-side max sell capacity blocks exits when order exceeds available size',()=>{
+ const i=intent({side:'sell',size:'0.001',netBefore:'0.001',netAfter:'0'});
+ assert.throws(()=>prepare({intent:i,leverage:{mode:'cross',value:2,network:'mainnet',asOfMs:t,maxTradeSzs:['5','0.0009']}}),/exceeds live vault/);
+});
+test('high-precision capacity is floored without falsely allowing larger order',()=>{
+ const i=intent({size:'0.001',netAfter:'0.001'});
+ assert.throws(()=>prepare({intent:i,leverage:{mode:'cross',value:2,network:'mainnet',asOfMs:t,maxTradeSzs:['0.0009999999999999','1']}}),/exceeds live vault/);
+});
+test('missing capacity information fails closed',()=>{
+ assert.throws(()=>prepare({leverage:{mode:'cross',value:2,network:'mainnet',asOfMs:t}}),/Missing exchange-side/);
 });

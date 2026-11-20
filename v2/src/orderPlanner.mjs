@@ -113,6 +113,20 @@ export function prepareShadowIocOrder({intent,riskReceipt,vaultSnapshot,riskPoli
   const before=sizeUnits(spec.netBefore),after=sizeUnits(spec.netAfter),sz=sizeUnits(spec.size);
   const lot=10n**BigInt(8-market.szDecimals);
   if (sz<=0n || sz%lot!==0n)throw Error('Intent not exactly representable in exchange lot size; no silent rounding');
+
+  // activeAssetData advertises current buy/sell maximum size for this vault.
+  // These decimals may have more than eight fractional places. Floor capacity
+  // toward zero to our local 1e-8 size units; NEVER round the trade up.
+  const caps=observedLeverage.maxTradeSzs;
+  if(!Array.isArray(caps)||caps.length!==2)throw Error('Missing exchange-side buy/sell capacity limits');
+  const capacityUnits=value=>{
+    if(typeof value!=='string'||value.length>60||! /^(?:0|[1-9]\d*)(?:\.\d{1,24})?$/.test(value))
+      throw Error('Invalid exchange trade capacity');
+    const [whole,fraction='']=value.split('.');
+    return BigInt(whole)*SIZE+BigInt(fraction.slice(0,8).padEnd(8,'0')||'0');
+  };
+  const cap=capacityUnits(caps[spec.side==='buy'?0:1]);
+  if(sz>cap)throw Error('Order exceeds live vault per-side trade capacity');
   // Hyperliquid has one net position per market: a flip is two separate
   // exchange actions. We NEVER disguise a flip as one reduce-only order.
   if (before!==0n && after!==0n && (before>0n)!==(after>0n))
