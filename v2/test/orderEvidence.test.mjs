@@ -77,3 +77,20 @@ test('read-only inspection returns validated evidence from mocked official info 
  const r=await inspectVaultOrderEvidence(intent(),{fetchImpl:async()=>({ok:true,json:async()=>status('filled')})});
  assert.equal(r.exchangeStatus,'filled');assert.equal(r.safeToResubmit,false);
 });
+test('baseline order evidence refuses same-tid replay with changed execution economics',()=>{
+ const a=fill(101,'0.005',{px:'50000',fee:'0.25',time:1000,startPosition:'0'});
+ for(const change of [{px:'50100'},{fee:'0.26'},{time:1001},
+  {startPosition:'0.005'},{closedPnl:'5'},{feeToken:'HYPE'}]){
+  const b={...a,...change,oid:'112233',tid:'101'};
+  assert.throws(()=>summarizeObservedOrderFills({
+   intent:intent(),exchangeOrderId:'112233',fills:[a,b]
+  }),/Conflicting exchange fill ID economic replay/);
+ }
+});
+test('u64 exchange order/trade ID bounds reject out-of-range strings',()=>{
+ assert.throws(()=>assessOrderStatusEvidence(intent(),status('filled',{
+  oid:'18446744073709551616'
+ })),/Unsafe/);
+ assert.throws(()=>summarizeObservedOrderFills({intent:intent(),
+  exchangeOrderId:'112233',fills:[fill('18446744073709551616','0.005')]}),/Unsafe/);
+});
