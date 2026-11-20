@@ -9,6 +9,7 @@ import {createHash} from 'node:crypto';
 import {validateAddress} from './hyperliquidRead.mjs';
 import {validateStagedPortfolioPreview} from './pgPortfolioBatchRepository.mjs';
 import {auditStagedPortfolioSettlement} from './settlementEvidence.mjs';
+import {auditPortfolioFillEconomics} from './portfolioFillEconomics.mjs';
 
 const HASH=/^[0-9a-f]{64}$/;
 const ZERO='0'.repeat(64);
@@ -73,7 +74,12 @@ function verifyHistory(rows,preview,batchId,vault){
    throw Error('Settlement audit chain sequence or identity corrupt; fail closed');
   const evidence=safeClone(fromJson(row.evidence));
   const report=safeClone(fromJson(row.audit_report));
-  const expectedReport=auditStagedPortfolioSettlement({preview,...evidence});
+  const variant=evidence.auditVariant??'BASE_V1';
+  if(!['BASE_V1','FILL_PATH_ECONOMIC_V1'].includes(variant))
+   throw Error('Unknown settlement review algorithm version');
+  const expectedReport=variant==='FILL_PATH_ECONOMIC_V1'
+   ?auditPortfolioFillEconomics({preview,...evidence})
+   :auditStagedPortfolioSettlement({preview,...evidence});
   if(stableJson(expectedReport)!==stableJson(report))
    throw Error('Stored settlement report disagrees with its saved observations');
   if(report.commitAuthorized!==false||report.executeAuthorized!==false||
@@ -106,11 +112,18 @@ export class PgSettlementAuditLog {
   * An audit never constitutes exchange authorization or historical completeness.
   * The batch row lock serializes concurrent audit appends across writers.
   */
- async record({preview,initialVaultSnapshot,legReports,nowMs,maxSnapshotAgeMs=10000}={}){
+ async record(args={}){return this.#record(args,'BASE_V1');}
+ /** Stores the exact economic/path review alongside legacy status audits.
+  * Still grants NO source settlement, exchange authority or retry permission. */
+ async recordEconomics(args={}){return this.#record(args,'FILL_PATH_ECONOMIC_V1');}
+ async #record({preview,initialVaultSnapshot,legReports,nowMs,maxSnapshotAgeMs=10000}={},variant){
   const spec=validateStagedPortfolioPreview(preview);
   if(preview.batchId!==spec.batchId)throw Error('Staged batch ID mismatch');
-  const evidence=safeClone({initialVaultSnapshot,legReports,nowMs,maxSnapshotAgeMs});
-  const report=safeClone(auditStagedPortfolioSettlement({preview,...evidence}));
+  const evidence=safeClone({...(variant==='FILL_PATH_ECONOMIC_V1'?{auditVariant:variant}:{}),
+   initialVaultSnapshot,legReports,nowMs,maxSnapshotAgeMs});
+  const report=safeClone(variant==='FILL_PATH_ECONOMIC_V1'
+   ?auditPortfolioFillEconomics({preview,...evidence})
+   :auditStagedPortfolioSettlement({preview,...evidence}));
   const packed=stableJson({evidence,report});
   if(Buffer.byteLength(packed,'utf8')>MAX_EVIDENCE_BYTES)
    throw Error('Audit evidence exceeds storage limit');
