@@ -258,3 +258,36 @@ The isolated PostgreSQL integration initially caught a mismatch between a batch 
 `sql/004_emergency_stop.sql` defines a per-vault `v2_vault_execution_controls` row. The state defaults to **halted**; a *missing* row blocks all `PgIntentRepository.beginSubmission()` calls. The procedure locks the control row inside the same serializable PostgreSQL transaction that validates the fencing lease and prepares a submission intent. Any HALT, missing row, concurrent lock, or DB error fails closed. `PgEmergencyStop.halt()` is a **one-way** emergency control callable without an active writer lease and increments a generation marker for auditing. `status()` treats a missing row as halted. There is intentionally **no arm/unhalt method**.
 
 **Limit:** a halt cannot unsend an HTTP order or cancel an order already resting on Hyperliquid. A future live adapter must independently recheck the control immediately before transmitting an order and implement a separate cancellation/reconciliation strategy. This module neither changes existing positions nor provides any signing, trading or funding workflow. CI tests use an explicit disposable test-only unhalted row so they can exercise the submission-*preparation* path; it must never be copied into a production activation procedure.
+
+
+## Durable settlement audit history (review-only)
+
+`src/pgSettlementAuditLog.mjs` and `sql/005_settlement_audits.sql` add a
+persistent, **non-authorizing** record of each attempted source-batch settlement
+review. Given an exact staged batch and independently gathered vault position,
+order-status and fill-history observations, `PgSettlementAuditLog.record()`
+recomputes the existing settlement report, verifies the on-disk staged batch
+content hash, and appends a JSONB evidence/report pair with a canonical
+SHA-256 evidence digest and per-batch sequence hash chain. A duplicate set
+of identical observations is idempotent. `listForReview()` reconstructs
+and verifies every stored report and hash link, including after a process
+restart or PostgreSQL JSONB key reorder. Append operations serialize under
+a locked batch row. Tests exercise corruption, replays, rollback, stale
+state, and disposable real PostgreSQL.
+
+**Critical limits:** the hash chain detects inconsistency but is not an
+independently anchored, tamperproof forensic signature. Supplied public
+exchange snapshots can be incomplete or forged; they are not authenticated
+order completion. Even `CORROBORATED_BUT_NOT_SETTLED` returns
+`commitAuthorized:false`, `executeAuthorized:false`,
+`safeToResubmit:false`, `requiresOperatorReview:true`. There is still
+no automatic `SETTLED` transition, virtual portfolio promotion, exchange
+`/exchange` client, signer, cancel endpoint, or live deployment.
+
+The audit also rejects a terminal exchange order-status timestamp older
+than the immediately preceding vault position snapshot. This prevents
+a stale status from being reused to corroborate a later trade or the
+opening leg of a reversal. The next separate engineering task is a
+transactionally correct **independent** settlement adjudication and
+fee/partial-fill ledger, with actual exchange authority validated only
+on explicitly approved testnet; do not deploy to mainnet based on these tests.
