@@ -1,3 +1,14 @@
+# VERIFIED DATABASE INTEGRATION — 2026-11-20
+
+- A **separate Neon Free-plan test project** was created: `vault-copy-v2-integration-test` / database `vault_copy_v2_test`; it is NOT the existing Core Fraction Neon project. Only the v2 prototype schema was applied there; test records were cleaned up. No trading activity.
+- Actual PostgreSQL 18 checks via the Neon connector passed: exclusive writer row, fencing-token advancement, unresolved intent blocks takeover, unique fill-key rollback, atomic intent/event record.
+- The separate **GitHub Actions PostgreSQL 16 service** ran the actual Node `integration/leasePostgres.mjs` and PASSED, alongside the 129-case `npm test` suite. [Verified CI run](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44671413426).
+- The test harness now uses the guarded `beginSubmission` path and intent-bound risk receipt. No keys, vault transfers, mainnet orders, or Render deployments have been initiated.
+- **Critical remaining gates:** destination public vault address and actual leader authorization, all five verified source addresses, historical source-equity and copy ratio policy, independent price/lot precision tests, exchange-side order confirmation/unknown-state handling, and carefully bounded testnet signing. Real DB integration does NOT prove that live exchange execution is safe.
+- GitHub `main` and the suspended Render `copy-agent` are unchanged.
+
+---
+
 # Vault copier v2 — current implementation status
 
 Date: 2026-11-19. **SHADOW / READ-ONLY ONLY; NOT READY TO MANAGE REAL MONEY.**
