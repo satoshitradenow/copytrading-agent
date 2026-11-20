@@ -133,3 +133,19 @@ test('post-vault snapshot preceding any observed fill is not post-trade evidence
  const p=staged(),r=proof(p.intents[0]);r.observedFills[0].time=101_100;
  assert.ok(audit(p,[r]).legAudits[0].reasons.includes('POST_ORDER_SNAPSHOT_PRECEDES_FILL'));
 });
+test('an old order-status timestamp cannot be reused after a later pre-leg position observation',()=>{
+ const p=staged(),r=proof(p.intents[0],{statusAt:100_050,snapshotAt:101_000});
+ const o=audit(p,[r]);
+ assert.equal(o.classification,'REQUIRES_RECONCILIATION');
+ assert.ok(o.legAudits[0].reasons.includes('ORDER_STATUS_PRECEDES_PREVIOUS_SNAPSHOT'));
+ assert.equal(o.commitAuthorized,false);
+});
+test('reversal open status must follow the close-leg vault snapshot',()=>{
+ const p=staged({flip:true});
+ const close=proof(p.intents[0],{oid:10,tid:'100',snapshotAt:100_950,statusAt:100_900,position:'0'});
+ const open=proof(p.intents[1],{oid:11,tid:'101',snapshotAt:101_300,statusAt:100_940,position:'-0.01'});
+ open.observedFills[0].time=101_100;
+ const o=audit(p,[close,open]);
+ assert.equal(o.classification,'REQUIRES_RECONCILIATION');
+ assert.ok(o.legAudits[1].reasons.includes('ORDER_STATUS_PRECEDES_PREVIOUS_SNAPSHOT'));
+});
