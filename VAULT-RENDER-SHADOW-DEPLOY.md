@@ -1,3 +1,40 @@
+# Render deployment audit — confirmed November 20, 2026
+
+The owner confirmed workspace `tea-d4jin675r7bs73fft0l0`
+(**Satoshi's workspace**). Live Render metadata confirms:
+
+- Existing `copy-agent` worker `srv-d4jj9kndiees738qi9k0`:
+  Singapore, Starter background worker, 1 configured instance,
+  auto-deploy OFF, root branch `main`, startup `npm start`.
+- The service was suspended for **billing** on February 27, 2026.
+  It is **not running**. No resume, redeploy, configuration change,
+  secret access or trade was performed.
+- Render identifies last successful deployed commit
+  `7960d37137fb64a5864733e6e82b1615f91b547c` (Dec 5, 2025)
+  after a December 14 rollback. Attempts to deploy
+  `b53bd8c786d406264020010b87c8dad116039eac`
+  (Dec 9 emergency patch) show **build_failed**, not a live release.
+  Do not assume the GitHub main head matches the last running binary.
+- Render lists **no PostgreSQL instances** in this workspace.
+- Attempted to provision an independent, **free-plan**
+  PostgreSQL 16 instance in Singapore named `vault-copy-shadow`.
+  Render rejected the creation with HTTP **402 billing_suspended**.
+  **No new database was created.** Further provisioning is blocked
+  until the workspace owner resolves billing with Render.
+- This branch remains GitHub CI-only; the read-only capture worker
+  is prepared but not deployed. **Do not use the legacy Starter worker
+  for experimental tests or unblock billing by auto-resuming live trades.**
+  Before starting a worker after billing is restored, verify service
+  pause/auto-deploy settings, dedicated v2 database and signer-free config.
+
+**Owner action required:** resolve the billing suspension through Render's
+billing settings. Then recheck status and provision a *separate* shadow
+worker and database; do not resume the original funded-account copier as
+the first action. Final source wallets and historical baseline still need
+explicit verification.
+
+---
+
 # Vault — first deploy: signer-free, read-only Hyperliquid source monitor
 
 **State:** INTEGRATION / NOT A MAINNET TRADING RELEASE.
