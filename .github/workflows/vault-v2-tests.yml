@@ -9,6 +9,21 @@ on:
     paths:
       - 'v2/**'
 jobs:
+  original-upstream-core-build:
+    # Build the EXISTING upstream TypeScript copier; NEVER start its runtime.
+    # This protects integration against breaking the code we already own.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies without lifecycle scripts
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Compile original TypeScript application (no secrets, no exchange)
+        run: npm run build
   test-shadow-only:
     runs-on: ubuntu-latest
     permissions:
