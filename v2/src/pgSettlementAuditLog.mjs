@@ -10,6 +10,7 @@ import {validateAddress} from './hyperliquidRead.mjs';
 import {validateStagedPortfolioPreview} from './pgPortfolioBatchRepository.mjs';
 import {auditStagedPortfolioSettlement} from './settlementEvidence.mjs';
 import {auditPortfolioFillEconomics} from './portfolioFillEconomics.mjs';
+import {observedFillClaims,reconcileObservedFillClaims} from './pgObservedFillRegistry.mjs';
 
 const HASH=/^[0-9a-f]{64}$/;
 const ZERO='0'.repeat(64);
@@ -100,6 +101,13 @@ function verifyHistory(rows,preview,batchId,vault){
 }
 const BATCH_SELECT='SELECT batch_id,vault_address,network,source_fill_key,source_record,expected_net_before,desired_net_after,planned_legs,status FROM v2_portfolio_batches WHERE batch_id=$1 AND vault_address=$2';
 const LOG_SELECT='SELECT batch_id,audit_seq,vault_address,evidence_digest,previous_chain_hash,chain_hash,evidence,audit_report FROM v2_settlement_audits WHERE batch_id=$1 ORDER BY audit_seq ASC';
+async function verifyRegistryHistory(client,preview,entries){
+ for(const item of entries){
+  if(item.evidence.auditVariant!=='FILL_PATH_ECONOMIC_V1')continue;
+  const claims=observedFillClaims({preview,legReports:item.evidence.legReports,report:item.report});
+  await reconcileObservedFillClaims(client,claims,{allowInsert:false});
+ }
+}
 
 export class PgSettlementAuditLog {
  constructor(pool){
@@ -128,6 +136,8 @@ export class PgSettlementAuditLog {
   if(Buffer.byteLength(packed,'utf8')>MAX_EVIDENCE_BYTES)
    throw Error('Audit evidence exceeds storage limit');
   const fingerprint=evidenceDigest(evidence,report);
+  const claims=variant==='FILL_PATH_ECONOMIC_V1'
+   ?observedFillClaims({preview,legReports:evidence.legReports,report}):[];
   const client=await this.pool.connect();
   try{
    await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
@@ -139,11 +149,16 @@ export class PgSettlementAuditLog {
     throw Error('Persisted batch identity changed');
    const history=await client.query(LOG_SELECT,[spec.batchId]);
    const verified=verifyHistory(history.rows,stored,spec.batchId,spec.vaultAddress);
+   await verifyRegistryHistory(client,stored,verified);
    const existing=verified.find(x=>x.evidenceDigest===fingerprint);
    if(existing){
+    await reconcileObservedFillClaims(client,claims,{allowInsert:false});
     await client.query('COMMIT');
     return Object.freeze({...existing,idempotent:true});
    }
+   // Trade-ID claims and the audit append are all-or-nothing. A collision
+   // rolls back both, including across simultaneous writer processes.
+   await reconcileObservedFillClaims(client,claims,{allowInsert:true});
    const seq=String(verified.length+1),previous=verified.length?verified.at(-1).chainHash:ZERO;
    const chain=nextChainHash(spec.batchId,seq,previous,fingerprint);
    const inserted=await client.query('INSERT INTO v2_settlement_audits (batch_id,audit_seq,vault_address,evidence_digest,previous_chain_hash,chain_hash,evidence,audit_report) VALUES ($1,$2::bigint,$3,$4,$5,$6,$7::jsonb,$8::jsonb) RETURNING audit_seq',
@@ -164,10 +179,20 @@ export class PgSettlementAuditLog {
  /** Read the entire chain and independently recompute each stored report. */
  async listForReview({batchId,vaultAddress}={}){
   const id=requireBatchId(batchId),vault=validateAddress(vaultAddress);
-  const found=await this.pool.query(BATCH_SELECT,[id,vault]);
-  if(found.rows.length!==1)throw Error('Persisted batch missing or ambiguous; audit refused');
-  const preview=persistedPreview(found.rows[0],id,vault);
-  const records=await this.pool.query(LOG_SELECT,[id]);
-  return Object.freeze(verifyHistory(records.rows,preview,id,vault));
+  const client=await this.pool.connect();
+  try{
+   // Single consistent PostgreSQL snapshot for batch, hash-chain, and fill
+   // identities; never combine an old batch with a new audit log snapshot.
+   await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+   const found=await client.query(BATCH_SELECT,[id,vault]);
+   if(found.rows.length!==1)throw Error('Persisted batch missing or ambiguous; audit refused');
+   const preview=persistedPreview(found.rows[0],id,vault);
+   const records=await client.query(LOG_SELECT,[id]);
+   const entries=verifyHistory(records.rows,preview,id,vault);
+   await verifyRegistryHistory(client,preview,entries);
+   await client.query('COMMIT');
+   return Object.freeze(entries);
+  }catch(e){try{await client.query('ROLLBACK');}catch{}throw e;}
+  finally{client.release();}
  }
 }
