@@ -58,6 +58,8 @@ function auditOne(batch,leg,report,previousSnapshotTime,nowMs){
   const reasons=[];
   if(!Number.isSafeInteger(result.statusTimestamp)||result.statusTimestamp<=0)
     reasons.push('ORDER_STATUS_TIMESTAMP_MISSING');
+  else if(result.statusTimestamp<previousSnapshotTime)
+    reasons.push('ORDER_STATUS_PRECEDES_PREVIOUS_SNAPSHOT');
   // Do not assume a terminal cancellation is an unfilled order; the exchange may
   // have filled a portion first, or the fill-history window may be truncated.
   if(result.exchangeStatus!=='filled')reasons.push('NOT_REPORTED_FULLY_FILLED');
