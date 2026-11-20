@@ -53,9 +53,24 @@ async function run(){
     const input={mode:'SHADOW_ONLY',vaultAddress:vault,fillKey:`source:${randomBytes(8).toString('hex')}`,
       coin:'BTC',side:'buy',size:'0.01',netBefore:'0',netAfter:'0.01'};
     const item=await intents.propose(input);intentId=item.intentId;
-    await intents.transition(item.intentId,{type:'RISK_APPROVED',atMs:1800000000000,
-      receipt:{mode:'SHADOW_ONLY',allowed:true,vaultAddress:vault,coin:'BTC',requiresReduceOnly:false}});
-    await intents.transition(item.intentId,{type:'SUBMISSION_STARTED',atMs:1800000000010,clientOrderId:item.clientOrderId,riskRecheckedAtMs:1800000000010});
+    // Approval is bound to the exact intent, never just the market or vault.
+    const approvedAt=Date.now();
+    await intents.transition(item.intentId,{type:'RISK_APPROVED',atMs:approvedAt,
+      receipt:{mode:'SHADOW_ONLY',allowed:true,intentId:item.intentId,
+        vaultAddress:vault,coin:'BTC',requiresReduceOnly:false}});
+    // General transition() MUST reject attempts to bypass the active writer.
+    await assert.rejects(intents.transition(item.intentId,{
+      type:'SUBMISSION_STARTED',atMs:Date.now(),clientOrderId:item.clientOrderId,
+      riskRecheckedAtMs:Date.now()}),/fenced vault lease/);
+    // DB-clock freshness, ownership and unsettled-intent checks are performed
+    // atomically by beginSubmission(). NO external exchange request occurs.
+    await lease.renew({vaultAddress:vault,writerId:b,fencingToken:'2',ttlMs:15000});
+    const submissionAt=Date.now();
+    const submitting=await intents.beginSubmission(item.intentId,{
+      type:'SUBMISSION_STARTED',atMs:submissionAt,clientOrderId:item.clientOrderId,
+      riskRecheckedAtMs:submissionAt
+    },{vaultAddress:vault,writerId:b,fencingToken:'2'});
+    assert.equal(submitting.status,'SUBMITTING');
     // The test DOES NOT submit anything to Hyperliquid, despite simulating
     // the durable state transition that would precede an external request.
     await lease.release({vaultAddress:vault,writerId:b,fencingToken:'2'});
