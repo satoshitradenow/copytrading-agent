@@ -10,6 +10,15 @@ import {sizeUnits,formatUnits} from './ledger.mjs';
 
 const MARKETS=/^[A-Z][A-Z0-9:_-]{0,31}$/;
 const CLOID=/^0x[0-9a-f]{32}$/;
+const U64_MAX=(1n<<64n)-1n;
+function safeExchangeId(value,label){
+ const asString=typeof value==='string'?value:
+   Number.isSafeInteger(value)&&value>=0?String(value):null;
+ if(asString===null||!/^(0|[1-9][0-9]*)$/.test(asString)||
+   BigInt(asString)>U64_MAX)throw Error('Unsafe or missing '+label+'; fail closed');
+ return asString;
+}
+
 const STATUS=new Set([
  'open','filled','canceled','triggered','rejected','marginCanceled',
  'vaultWithdrawalCanceled','openInterestCapCanceled','selfTradeCanceled',
@@ -53,12 +62,8 @@ export function assessOrderStatusEvidence(intent,response){
      found.coin!==intent.coin || found.side!==(intent.side==='buy'?'B':'A') ||
      positiveSize(found.origSz)!==expected || found.reduceOnly!==intent.requiresReduceOnly)
     throw Error('Order status does not match intended vault order; fail closed');
-  const oid=found.oid;
-  // A JavaScript number cannot safely represent all u64 order IDs. Refuse
-  // unsafe rounded IDs rather than falsely correlating multiple orders.
-  const orderId=typeof oid==='string' && /^[0-9]+$/.test(oid) ? oid :
-    Number.isSafeInteger(oid)&&oid>=0 ? String(oid) : null;
-  if(orderId===null)throw Error('Unsafe or missing exchange order ID; fail closed');
+  // Reject rounded JavaScript numbers and out-of-range exchange u64 IDs.
+  const orderId=safeExchangeId(found.oid,'exchange order ID');
   return Object.freeze({...basic,classification:TERMINAL.has(status)?'REPORTED_TERMINAL_NEEDS_FILL_AUDIT':'ORDER_STILL_ACTIVE_OR_TRIGGERED',
     exchangeStatus:status,exchangeOrderId:orderId,statusTimestamp:response.order.statusTimestamp??null});
 }
@@ -75,19 +80,24 @@ export function summarizeObservedOrderFills({intent,exchangeOrderId,fills}){
   const unique=new Map();
   for(const fill of fills){
     if(!fill || typeof fill!=='object')throw Error('Malformed observed order fill');
-    const oid=typeof fill.oid==='string'?fill.oid:
-      Number.isSafeInteger(fill.oid)&&fill.oid>=0?String(fill.oid):null;
-    if(oid===null || !/^\d+$/.test(oid))throw Error('Unsafe or missing observed fill order ID');
+    const oid=safeExchangeId(fill.oid,'observed fill order ID');
     if(oid!==exchangeOrderId)continue; // Other orders are irrelevant
-    const tid=typeof fill.tid==='string'?fill.tid:
-      Number.isSafeInteger(fill.tid)&&fill.tid>=0?String(fill.tid):null;
-    if(tid===null||!/^\d+$/.test(tid) || fill.coin!==intent.coin ||
-      fill.side!==(intent.side==='buy'?'B':'A'))throw Error('Conflicting or unsafe observed order fill');
-    const amount=positiveSize(fill.sz),previous=unique.get(tid);
-    if(previous!==undefined && previous!==amount)throw Error('Conflicting exchange fill ID replay');
-    unique.set(tid,amount);
+    const tid=safeExchangeId(fill.tid,'observed trade ID');
+    if(fill.coin!==intent.coin || fill.side!==(intent.side==='buy'?'B':'A'))
+      throw Error('Conflicting or unsafe observed order fill');
+    const amount=positiveSize(fill.sz);
+    // Size-only deduplication can silently accept a replay where the same tid
+    // has a changed execution price, fee, PnL, time or pre-fill position.
+    // Keep optional fields when available; no claim of full economic evidence.
+    const identity=JSON.stringify([oid,tid,fill.coin,fill.side,formatUnits(amount),
+      ...['time','px','fee','feeToken','closedPnl','builderFee',
+         'startPosition','hash','dir','crossed'].map(k=>fill[k]??null)]);
+    const previous=unique.get(tid);
+    if(previous!==undefined && previous.identity!==identity)
+      throw Error('Conflicting exchange fill ID economic replay');
+    unique.set(tid,{amount,identity});
   }
-  const sum=[...unique.values()].reduce((a,b)=>a+b,0n);
+  const sum=[...unique.values()].reduce((a,b)=>a+b.amount,0n);
   if(sum>expected)throw Error('Observed order fills exceed intended size');
   return Object.freeze({mode:'READ_ONLY',exchangeOrderId,fillCount:unique.size,
     observedFilledSize:formatUnits(sum),remainingUnverifiedSize:formatUnits(expected-sum),
