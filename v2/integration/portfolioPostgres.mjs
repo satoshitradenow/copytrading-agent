@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import {ShadowPortfolioNetting} from '../src/portfolioNetting.mjs';
 import {MemoryJournal} from '../src/ledger.mjs';
 import {PgPortfolioBatchRepository} from '../src/pgPortfolioBatchRepository.mjs';
+import {PgSettlementAuditLog} from '../src/pgSettlementAuditLog.mjs';
 import {PgVaultWriterLease} from '../src/pgVaultWriterLease.mjs';
 
 function guardedConnection(){
@@ -35,6 +36,8 @@ async function run(){
     const ddl3=await readFile(new URL('../sql/003_portfolio_batches.sql',import.meta.url),'utf8');
     await pool.query(ddl2);
     await pool.query(ddl3);
+    const ddl5=await readFile(new URL('../sql/005_settlement_audits.sql',import.meta.url),'utf8');
+    await pool.query(ddl5);
     const leases=new PgVaultWriterLease(pool),repo=new PgPortfolioBatchRepository(pool);
     const lease=await leases.acquire({vaultAddress:vault,writerId:owner.writerId});
     owner.fencingToken=lease.fencingToken;
@@ -52,6 +55,20 @@ async function run(){
     assert.equal(persisted.persistedStatus,'STAGED');
     assert.deepEqual(persisted.intents.map(x=>x.intentId),one.intents.map(x=>x.intentId));
     assert.equal(persisted.executeAuthorized,false);
+    // Write an explicitly incomplete audit of the proposed leg into real
+    // PostgreSQL. It remains review-only and MUST NOT settle the batch.
+    const auditLog=new PgSettlementAuditLog(pool);
+    const evidence={preview:{...one,batchId:firstBatch},
+      initialVaultSnapshot:{mode:'READ_ONLY',network:'mainnet',vaultAddress:vault,
+        positions:one.expectedNetBefore,asOfMs:fill.timeMs+13},
+      legReports:one.intents.map(()=>null),nowMs:fill.timeMs+14};
+    const firstAudit=await auditLog.record(evidence);
+    assert.equal(firstAudit.report.classification,'REQUIRES_RECONCILIATION');
+    assert.equal(firstAudit.report.commitAuthorized,false);
+    assert.equal(firstAudit.executeAuthorized,false);
+    assert.equal((await auditLog.record(evidence)).idempotent,true);
+    assert.equal((await auditLog.listForReview({batchId:firstBatch,vaultAddress:vault})).length,1);
+    assert.equal((await repo.pendingForVault(vault)).length,1);
     await assert.rejects(repo.stage({...one,proposedSourceJournalRecord:{...one.proposedSourceJournalRecord,fillDigest:'a'.repeat(64)}},owner),/Conflicting portfolio batch/);
     const two=plan({...fill,fillId:'HL:TEST2',timeMs:11000});
     await assert.rejects(repo.stage(two,owner),/Previous source event/);
@@ -69,10 +86,11 @@ async function run(){
     secondBatch=(await repo.stage(two,owner)).batchId;
     assert.notEqual(firstBatch,secondBatch);
     assert.equal((await repo.pendingForVault(vault)).length,1);
-    process.stdout.write('PASS: real PostgreSQL portfolio staging, lease fencing, source dedup, partial uniqueness, and no premature journal advancement\n');
+    process.stdout.write('PASS: real PostgreSQL portfolio staging, audited settlement evidence, lease fencing, idempotency and no premature journal advancement\n');
   }finally{
     try{
       // Only a randomly generated test vault; no arbitrary table truncation.
+      await pool.query('DELETE FROM v2_settlement_audits WHERE vault_address=$1',[vault]);
       await pool.query('DELETE FROM v2_portfolio_batches WHERE vault_address=$1',[vault]);
       await pool.query('DELETE FROM v2_vault_writer_leases WHERE vault_address=$1',[vault]);
     }finally{await pool.end();}
