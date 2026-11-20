@@ -102,10 +102,11 @@ test('audit history is idempotent for identical evidence and chained across new 
 test('corrupt evidence, broken chain and forged settled flags are rejected on read and append',async()=>{
  const preview=setup(),{db,pool}=poolFor(preview),repo=new PgSettlementAuditLog(pool);
  await repo.record(request(preview));
+ const originalEvidence=structuredClone(db.logs[0].evidence);
  db.logs[0].evidence.initialVaultSnapshot.positions.BTC='123';
  await assert.rejects(repo.listForReview({batchId:preview.batchId,vaultAddress:VAULT}));
  await assert.rejects(repo.record(request(preview,[{statusResponse:{status:'unknownOid'}}])));
- db.logs[0].evidence.initialVaultSnapshot.positions.BTC='0';
+ db.logs[0].evidence=originalEvidence;
  db.logs[0].chain_hash='f'.repeat(64);
  await assert.rejects(repo.listForReview({batchId:preview.batchId,vaultAddress:VAULT}),/chain hash mismatch/);
  db.logs[0].chain_hash='0'.repeat(64);
