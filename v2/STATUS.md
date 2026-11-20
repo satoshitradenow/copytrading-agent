@@ -1,3 +1,13 @@
+# VERIFIED SETTLEMENT AUDIT BUILD — 2026-11-20
+
+**Build:** `c0f2e65c883b39bc9356585cb004dc31c3e12a6b` — **243/243 Node 22 tests passed**, plus both real PostgreSQL integration scripts, in [GitHub Actions run 44680833385](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44680833385). This confirms the jsonb canonical-hash fix and persisted batch read-back against disposable PostgreSQL.
+
+**Safety boundaries remain:** settlement evidence is read-only, human-review-only, and always has `executeAuthorized:false`, `commitAuthorized:false`, `safeToResubmit:false`. A matching account position and available fill history are not atomic proof of all exchange activity. No automatic DB settlement, portfolio journal promotion, exchange signer, Render v2 deployment, or live orders exist.
+
+**Next engineering gates:** durable operator kill switch and exchange execution evidence logs; independent exchange-side confirmed settlement under one writer lease, correct partial-fill/fee accounting, full five-trader validation, source-equity evidence policy, testnet agent authorization and signed test orders (only with explicit approval), sustained paper/dry-run monitoring, then small monitored mainnet pilot after separate authorization.
+
+---
+
 # INTEGRATION FAILURE CAUGHT AND CORRECTED — 2026-11-20
 
 - A disposable GitHub PostgreSQL test correctly failed on `readForAudit()`: DB `jsonb` reorders keys, and the initial batch hash was insertion-order-sensitive.
