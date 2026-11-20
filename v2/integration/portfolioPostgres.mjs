@@ -77,6 +77,28 @@ async function run(){
     assert.equal(chain.length,2);
     assert.equal(chain[1].evidence.auditVariant,'FILL_PATH_ECONOMIC_V1');
     assert.equal(chain[1].report.classification,'REQUIRES_RECONCILIATION');
+    // Second economic audit with a complete, internally consistent synthetic
+    // order/fill/position path. Still not sufficient to auto-settle the DB batch.
+    const leg=one.intents[0],oid=123456;
+    const full={...evidence,nowMs:fill.timeMs+600,
+      legReports:[{statusResponse:{status:'order',order:{
+        status:'filled',statusTimestamp:fill.timeMs+400,
+        order:{oid,cloid:leg.clientOrderId,coin:leg.coin,
+          side:leg.side==='buy'?'B':'A',origSz:leg.size,reduceOnly:false}}},
+        observedFills:[{oid,tid:201,coin:leg.coin,
+          side:leg.side==='buy'?'B':'A',sz:leg.size,
+          px:'50000',fee:'0.15',feeToken:'USDC',closedPnl:'0',
+          startPosition:leg.netBefore,time:fill.timeMs+300}],
+        vaultSnapshot:{mode:'READ_ONLY',network:'mainnet',vaultAddress:vault,
+          positions:{BTC:leg.netAfter},asOfMs:fill.timeMs+500}}]};
+    const success=await auditLog.recordEconomics(full);
+    assert.equal(success.report.classification,'ECONOMIC_PATH_CORROBORATED_BUT_NOT_SETTLED');
+    assert.equal(success.report.commitAuthorized,false);
+    assert.equal(success.report.economicLegAudits[0].path.economics.observedFeeUsd,'0.15');
+    const later=await auditLog.listForReview({batchId:firstBatch,vaultAddress:vault});
+    assert.equal(later.length,3);
+    assert.equal(later[2].report.classification,'ECONOMIC_PATH_CORROBORATED_BUT_NOT_SETTLED');
+    assert.equal((await repo.readForAudit({batchId:firstBatch,vaultAddress:vault})).persistedStatus,'STAGED');
     assert.equal((await repo.pendingForVault(vault)).length,1);
     await assert.rejects(repo.stage({...one,proposedSourceJournalRecord:{...one.proposedSourceJournalRecord,fillDigest:'a'.repeat(64)}},owner),/Conflicting portfolio batch/);
     const two=plan({...fill,fillId:'HL:TEST2',timeMs:11000});
