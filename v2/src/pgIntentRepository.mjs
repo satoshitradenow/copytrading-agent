@@ -125,6 +125,14 @@ export class PgIntentRepository {
         WHERE vault_address=$1 AND writer_id=$2 AND fencing_token=$3::bigint
           AND expires_at>clock_timestamp() FOR UPDATE`,[vault,writerId,fencingToken]);
       if(lease.rows.length!==1)throw Error('Lease lost or expired; submission forbidden');
+      // Fail-closed emergency stop, locked in the SAME serializable
+      // transaction as the lease and order-intent transition. A missing row,
+      // absent table or any DB error can never imply permission to trade.
+      const controls=await client.query(`
+        SELECT halted,generation FROM v2_vault_execution_controls
+        WHERE vault_address=$1 FOR UPDATE`,[vault]);
+      if(controls.rows.length!==1 || controls.rows[0].halted!==false)
+        throw Error('Emergency HALT active or missing; submission forbidden');
       const dbNow=Number(lease.rows[0].db_now_ms);
       if(!Number.isSafeInteger(dbNow)||dbNow<=0)throw Error('Invalid PostgreSQL clock');
       if(!Number.isSafeInteger(event.atMs)||

@@ -12,6 +12,7 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {PgVaultWriterLease} from '../src/pgVaultWriterLease.mjs';
 import {PgIntentRepository} from '../src/pgIntentRepository.mjs';
+import {PgEmergencyStop} from '../src/pgEmergencyStop.mjs';
 
 const APPROVAL='YES_ISOLATED_TEST_DATABASE';
 function checkEnv(){
@@ -35,6 +36,8 @@ async function run(){
     if(name.rows.length!==1||name.rows[0].name!=='vault_copy_v2_test')throw Error('Server database does not match explicit test DB');
     const sql=await readFile(new URL('../sql/002_execution_ledger.sql',import.meta.url),'utf8');
     await pool.query(sql); // DDL permitted only in independently named isolated test database.
+    const emergencySchema=await readFile(new URL('../sql/004_emergency_stop.sql',import.meta.url),'utf8');
+    await pool.query(emergencySchema);
     const lease=new PgVaultWriterLease(pool),intents=new PgIntentRepository(pool);
     const claim=await lease.acquire({vaultAddress:vault,writerId:a,ttlMs:15000});
     assert.equal(claim.fencingToken,'1');
@@ -71,6 +74,16 @@ async function run(){
     await assert.rejects(intents.transition(item.intentId,{
       type:'SUBMISSION_STARTED',atMs:Date.now(),clientOrderId:item.clientOrderId,
       riskRecheckedAtMs:Date.now()}),/fenced vault lease/);
+    // No control row exists yet: the vault must fail closed.
+    const pendingEvent={type:'SUBMISSION_STARTED',atMs:Date.now(),
+      clientOrderId:item.clientOrderId,riskRecheckedAtMs:Date.now()};
+    await assert.rejects(intents.beginSubmission(item.intentId,pendingEvent,
+      {vaultAddress:vault,writerId:b,fencingToken:'2'}),/Emergency HALT/);
+    // TEST HARNESS ONLY. Production has NO 'arm' API; separate operator review
+    // would be required to create such a row for a real vault.
+    await pool.query(`INSERT INTO v2_vault_execution_controls
+      (vault_address,halted,generation,halt_reason,halted_by)
+      VALUES ($1,FALSE,1,'isolated CI test only','ci')`,[vault]);
     // DB-clock freshness, ownership and unsettled-intent checks are performed
     // atomically by beginSubmission(). NO external exchange request occurs.
     await lease.renew({vaultAddress:vault,writerId:b,fencingToken:'2',ttlMs:15000});
@@ -85,6 +98,11 @@ async function run(){
       riskRecheckedAtMs:submissionAt
     },{vaultAddress:vault,writerId:b,fencingToken:'2'});
     assert.equal(submitting.status,'SUBMITTING');
+    const halt=new PgEmergencyStop(pool);
+    const stopped=await halt.halt({vaultAddress:vault,
+      reason:'Explicitly stop this disposable CI test vault',requestedBy:'ci'});
+    assert.equal(stopped.halted,true);
+    assert.equal((await halt.status(vault)).halted,true);
     // The test DOES NOT submit anything to Hyperliquid, despite simulating
     // the durable state transition that would precede an external request.
     await lease.release({vaultAddress:vault,writerId:b,fencingToken:'2'});
@@ -96,6 +114,7 @@ async function run(){
     try{
       if(intentId)await pool.query('DELETE FROM v2_execution_events WHERE intent_id=$1',[intentId]);
       await pool.query('DELETE FROM v2_execution_intents WHERE vault_address=$1',[vault]);
+      await pool.query('DELETE FROM v2_vault_execution_controls WHERE vault_address=$1',[vault]);
       await pool.query('DELETE FROM v2_vault_writer_leases WHERE vault_address=$1',[vault]);
     }finally{await pool.end();}
   }

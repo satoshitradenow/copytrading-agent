@@ -1,3 +1,13 @@
+# NEW MILESTONE — 2026-11-20: DATABASE EMERGENCY HALT
+
+- Added one-way `PgEmergencyStop.halt()` and per-vault `v2_vault_execution_controls` with default HALTED; missing control row cannot enable submission.
+- `PgIntentRepository.beginSubmission()` now locks an explicit unhalted control row *inside the same serializable DB transaction* as the writer lease and intended order state.
+- No unhalt/arming operator API exists; real trading remains impossible in v2, and an outstanding HTTP request cannot be revoked merely by writing a halt row.
+- Added focused stop tests and real PostgreSQL CI checks (including missing control, test-only approval, subsequent halt). CI result must be verified for this commit.
+- No legacy Render activation, secrets, private keys, wallet transfers or Hyperliquid exchange writes.
+
+---
+
 # VERIFIED SETTLEMENT AUDIT BUILD — 2026-11-20
 
 **Build:** `c0f2e65c883b39bc9356585cb004dc31c3e12a6b` — **243/243 Node 22 tests passed**, plus both real PostgreSQL integration scripts, in [GitHub Actions run 44680833385](https://github.com/satoshitradenow/copytrading-agent/actions/runs/44680833385). This confirms the jsonb canonical-hash fix and persisted batch read-back against disposable PostgreSQL.

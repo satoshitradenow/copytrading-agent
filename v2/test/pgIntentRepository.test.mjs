@@ -5,12 +5,12 @@ const VAULT='0x1111111111111111111111111111111111111111';
 const T=1800000000000;
 const WRITER='17fa2a6a-c4c5-47f4-b232-a11234567890';
 const OWNER={vaultAddress:VAULT,writerId:WRITER,fencingToken:'1'};
-const grantLease=pool=>{pool.db.leases.set(VAULT,{vault_address:VAULT,writer_id:WRITER,fencing_token:'1',expires_at:T+15000});};
+const grantLease=pool=>{pool.db.leases.set(VAULT,{vault_address:VAULT,writer_id:WRITER,fencing_token:'1',expires_at:T+15000});pool.db.controls.set(VAULT,{halted:false,generation:'1'});};
 const source=(x={})=>({mode:'SHADOW_ONLY',vaultAddress:VAULT,fillKey:'t:42',coin:'BTC',side:'buy',size:'0.02',netBefore:'0',netAfter:'0.02',...x});
 const evt=(type,rest={})=>({type,atMs:T,...rest});
 const receipt=p=>({mode:'SHADOW_ONLY',allowed:true,vaultAddress:VAULT,coin:'BTC',requiresReduceOnly:false,intentId:p.intentId});
 function makePool(){
- const db={intents:new Map(),events:[],leases:new Map(),time:T,commits:0,rollbacks:0,failOn:null};
+ const db={intents:new Map(),events:[],leases:new Map(),controls:new Map(),time:T,commits:0,rollbacks:0,failOn:null};
  const rows=x=>JSON.parse(JSON.stringify(x));
  const pool={db,connect:async()=>{
   let stage=null;
@@ -25,6 +25,10 @@ function makePool(){
      const [vault,writer,token]=params,r=db.leases.get(vault);
      const ok=r&&r.writer_id===writer&&r.fencing_token===String(token)&&r.expires_at>db.time;
      return {rowCount:ok?1:0,rows:ok?[{...r,db_now_ms:db.time}]:[]};
+   }
+   if(sql.includes('FROM v2_vault_execution_controls')&&sql.includes('FOR UPDATE')){
+     const row=db.controls.get(params[0]);
+     return {rowCount:row?1:0,rows:row?[{...row}]:[]};
    }
    if(sql.startsWith('SELECT intent_id FROM v2_execution_intents')&&sql.includes('intent_id<>$2')){
      const [vault,id,statuses]=params;
@@ -167,5 +171,27 @@ test('durable submit transition rolls back if audit insert fails',async()=>{
  grantLease(pool);await repo.transition(p.intentId,evt('RISK_APPROVED',{receipt:receipt(p)}));
  pool.db.failOn='INSERT INTO v2_execution_events';
  await assert.rejects(repo.beginSubmission(p.intentId,evt('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T}),OWNER),/simulated/);
+ assert.equal((await repo.get(p.intentId)).status,'APPROVED');
+});
+test('missing emergency control row and active HALT block submission without intent transition',async()=>{
+ const pool=makePool(),repo=new PgIntentRepository(pool),p=await repo.propose(source());
+ grantLease(pool);
+ await repo.transition(p.intentId,evt('RISK_APPROVED',{receipt:receipt(p)}));
+ const event=evt('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T});
+ pool.db.controls.delete(VAULT);
+ await assert.rejects(repo.beginSubmission(p.intentId,event,OWNER),/Emergency HALT/);
+ pool.db.controls.set(VAULT,{halted:true,generation:'2'});
+ await assert.rejects(repo.beginSubmission(p.intentId,event,OWNER),/Emergency HALT/);
+ assert.equal((await repo.get(p.intentId)).status,'APPROVED');
+ pool.db.controls.set(VAULT,{halted:false,generation:'3'});
+ assert.equal((await repo.beginSubmission(p.intentId,event,OWNER)).status,'SUBMITTING');
+});
+test('a database error reading emergency control rolls back and cannot imply permission',async()=>{
+ const pool=makePool(),repo=new PgIntentRepository(pool),p=await repo.propose(source());
+ grantLease(pool);
+ await repo.transition(p.intentId,evt('RISK_APPROVED',{receipt:receipt(p)}));
+ pool.db.failOn='FROM v2_vault_execution_controls';
+ await assert.rejects(repo.beginSubmission(p.intentId,
+   evt('SUBMISSION_STARTED',{clientOrderId:p.clientOrderId,riskRecheckedAtMs:T}),OWNER),/simulated PostgreSQL failure/);
  assert.equal((await repo.get(p.intentId)).status,'APPROVED');
 });

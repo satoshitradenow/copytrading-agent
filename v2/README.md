@@ -251,3 +251,10 @@ The policy is explicitly configurable: taker-fee/slippage stress assumptions, mi
 ### Stable batch identity across JSONB persistence
 
 The isolated PostgreSQL integration initially caught a mismatch between a batch hash created in application memory and one reconstructed after PostgreSQL's `jsonb` object-key ordering. `validateStagedPortfolioPreview` now canonicalizes nested JSON object keys before hashing, while preserving array order. A regression test deliberately reverses nested object key order. **This changes the preview batch-ID algorithm compared with earlier shadow-only prototypes; any legacy draft batches must be reviewed and rebaselined, not silently migrated.** It is not authorization to mark a batch settled.
+
+
+## Emergency HALT enforced inside DB submission preparation
+
+`sql/004_emergency_stop.sql` defines a per-vault `v2_vault_execution_controls` row. The state defaults to **halted**; a *missing* row blocks all `PgIntentRepository.beginSubmission()` calls. The procedure locks the control row inside the same serializable PostgreSQL transaction that validates the fencing lease and prepares a submission intent. Any HALT, missing row, concurrent lock, or DB error fails closed. `PgEmergencyStop.halt()` is a **one-way** emergency control callable without an active writer lease and increments a generation marker for auditing. `status()` treats a missing row as halted. There is intentionally **no arm/unhalt method**.
+
+**Limit:** a halt cannot unsend an HTTP order or cancel an order already resting on Hyperliquid. A future live adapter must independently recheck the control immediately before transmitting an order and implement a separate cancellation/reconciliation strategy. This module neither changes existing positions nor provides any signing, trading or funding workflow. CI tests use an explicit disposable test-only unhalted row so they can exercise the submission-*preparation* path; it must never be copied into a production activation procedure.
