@@ -82,7 +82,8 @@ export function observedFillClaims({preview,legReports,report}={}){
 const FIND=`SELECT network,vault_address,trade_id,batch_id,client_order_id,
  exchange_order_id,economic_digest,economic_record
  FROM v2_observed_exchange_fills
- WHERE network=$1 AND vault_address=$2 AND trade_id=$3 FOR UPDATE`;
+ WHERE network=$1 AND vault_address=$2 AND trade_id=$3`;
+const FIND_LOCK=FIND+' FOR UPDATE';
 const INSERT=`INSERT INTO v2_observed_exchange_fills
  (network,vault_address,trade_id,batch_id,client_order_id,exchange_order_id,
   economic_digest,economic_record)
@@ -115,7 +116,9 @@ export async function reconcileObservedFillClaims(client,claims,{allowInsert=fal
     inserted++;
    }else if(result.rowCount!==0)throw Error('Unexpected exchange fill registry insert');
   }
-  const found=await client.query(FIND,key);
+  // Read-only replay must not acquire write locks, while an insertion
+  // collision is validated under the caller's serialized transaction.
+  const found=await client.query(allowInsert?FIND_LOCK:FIND,key);
   if(found.rows.length!==1||!comparePersisted(found.rows[0],claim))
    throw Error('Observed exchange TID collision, changed economic fields, or missing registry record');
  }
