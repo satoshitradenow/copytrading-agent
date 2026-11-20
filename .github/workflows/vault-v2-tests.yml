@@ -4,10 +4,14 @@ on:
     branches: [vault-v2-design-20261119, vault-upstream-clean-20261120, vault-upstream-integration-20261120]
     paths:
       - 'v2/**'
+      - 'src/**'
+      - 'root-tests/**'
       - '.github/workflows/vault-v2-tests.yml'
   pull_request:
     paths:
       - 'v2/**'
+      - 'src/**'
+      - 'root-tests/**'
 jobs:
   original-upstream-core-build:
     # Build the EXISTING upstream TypeScript copier; NEVER start its runtime.
