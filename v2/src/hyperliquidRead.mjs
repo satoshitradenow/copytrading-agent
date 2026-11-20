@@ -131,3 +131,42 @@ export async function readVaultOrderStatus(vaultAddress,clientOrderId,options={}
      !['order','unknownOid'].includes(result.status))throw Error('Malformed Hyperliquid order status; fail closed');
   return result;
 }
+
+/** Read-only validator-perpetual metadata. Never map tickers to asset IDs by hand. */
+export async function readMainPerpMetadata(options={}) {
+  const startedAtMs=Date.now();
+  const meta=await info({type:'meta'},options);
+  const observedAtMs=Date.now();
+  if(observedAtMs-startedAtMs>10000)throw Error('Perpetual metadata query too slow; fail closed');
+  if(!meta || !Array.isArray(meta.universe) || !meta.universe.length || meta.universe.length>2000)
+    throw Error('Malformed main perpetual metadata');
+  const names=new Set();
+  for(const a of meta.universe){
+    if(!a || typeof a.name!=='string' || !/^[A-Z][A-Z0-9_-]{0,31}$/.test(a.name) ||
+        names.has(a.name) || !Number.isSafeInteger(a.szDecimals) || a.szDecimals<0 || a.szDecimals>6 ||
+        !Number.isSafeInteger(a.maxLeverage) || a.maxLeverage<1 || a.maxLeverage>100)
+      throw Error('Conflicting or invalid main perpetual metadata');
+    names.add(a.name);
+  }
+  return {mode:'READ_ONLY',meta,observedAtMs,
+    limitation:'Metadata is an observation, not proof the exchange state stays unchanged'};
+}
+
+/** The current leverage setting can exist even without an open position. */
+export async function readVaultAssetLeverage(vaultAddress,coin,options={}){
+  const vault=validateAddress(vaultAddress);
+  if(typeof coin!=='string'||!/^[A-Z][A-Z0-9_-]{0,31}$/.test(coin))
+    throw Error('Invalid validator perpetual market');
+  const startedAtMs=Date.now();
+  const data=await info({type:'activeAssetData',user:vault,coin},options);
+  const observedAtMs=Date.now();
+  if(observedAtMs-startedAtMs>10000)throw Error('Active leverage observation too slow; fail closed');
+  if(!data||typeof data!=='object'||Array.isArray(data)||
+     data.user && validateAddress(data.user)!==vault ||
+     data.coin && data.coin!==coin ||
+     !['cross','isolated'].includes(data.leverage?.type) ||
+     !Number.isSafeInteger(data.leverage.value)||data.leverage.value<1||data.leverage.value>100)
+    throw Error('Malformed or mismatched active asset leverage; fail closed');
+  return {mode:data.leverage.type,value:data.leverage.value,asOfMs:observedAtMs,
+    vaultAddress:vault,coin,source:'activeAssetData',signingAuthorityVerified:false};
+}
