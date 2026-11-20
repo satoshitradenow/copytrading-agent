@@ -38,6 +38,8 @@ async function run(){
     await pool.query(ddl3);
     const ddl5=await readFile(new URL('../sql/005_settlement_audits.sql',import.meta.url),'utf8');
     await pool.query(ddl5);
+    const ddl6=await readFile(new URL('../sql/006_observed_exchange_fills.sql',import.meta.url),'utf8');
+    await pool.query(ddl6);
     const leases=new PgVaultWriterLease(pool),repo=new PgPortfolioBatchRepository(pool);
     const lease=await leases.acquire({vaultAddress:vault,writerId:owner.writerId});
     owner.fencingToken=lease.fencingToken;
@@ -98,6 +100,17 @@ async function run(){
     const later=await auditLog.listForReview({batchId:firstBatch,vaultAddress:vault});
     assert.equal(later.length,3);
     assert.equal(later[2].report.classification,'ECONOMIC_PATH_CORROBORATED_BUT_NOT_SETTLED');
+    const foundClaim=await pool.query(`SELECT batch_id,trade_id,exchange_order_id,economic_record
+      FROM v2_observed_exchange_fills WHERE network=$1 AND vault_address=$2 AND trade_id=$3`,
+      ['mainnet',vault,'201']);
+    assert.equal(foundClaim.rows.length,1);
+    assert.equal(foundClaim.rows[0].batch_id,firstBatch);
+    assert.equal(foundClaim.rows[0].economic_record.fee,'0.15');
+    assert.equal((await auditLog.recordEconomics(full)).idempotent,true);
+    const manipulated=structuredClone(full);
+    manipulated.legReports[0].observedFills[0].fee='0.16';
+    await assert.rejects(auditLog.recordEconomics(manipulated),
+      /Observed exchange TID collision, changed economic fields/);
     assert.equal((await repo.readForAudit({batchId:firstBatch,vaultAddress:vault})).persistedStatus,'STAGED');
     assert.equal((await repo.pendingForVault(vault)).length,1);
     await assert.rejects(repo.stage({...one,proposedSourceJournalRecord:{...one.proposedSourceJournalRecord,fillDigest:'a'.repeat(64)}},owner),/Conflicting portfolio batch/);
@@ -117,10 +130,31 @@ async function run(){
     secondBatch=(await repo.stage(two,owner)).batchId;
     assert.notEqual(firstBatch,secondBatch);
     assert.equal((await repo.pendingForVault(vault)).length,1);
+    // Even after synthetic test-only transition of the prior batch, an
+    // already attributed exchange tid cannot fund a new source event.
+    const secondLeg=two.intents[0],crossBatch={
+      preview:{...two,batchId:secondBatch},
+      initialVaultSnapshot:{mode:'READ_ONLY',network:'mainnet',vaultAddress:vault,
+        positions:two.expectedNetBefore,asOfMs:11013},
+      legReports:[{statusResponse:{status:'order',order:{status:'filled',statusTimestamp:11400,
+        order:{oid,cloid:secondLeg.clientOrderId,coin:secondLeg.coin,
+          side:secondLeg.side==='buy'?'B':'A',origSz:secondLeg.size,reduceOnly:false}}},
+        observedFills:[{oid,tid:201,coin:secondLeg.coin,side:secondLeg.side==='buy'?'B':'A',
+          sz:secondLeg.size,px:'50000',fee:'0.15',feeToken:'USDC',closedPnl:'0',
+          startPosition:secondLeg.netBefore,time:11300}],
+        vaultSnapshot:{mode:'READ_ONLY',network:'mainnet',vaultAddress:vault,
+          positions:{BTC:secondLeg.netAfter},asOfMs:11500}}],nowMs:11600};
+    await assert.rejects(auditLog.recordEconomics(crossBatch),
+      /Observed exchange TID collision, changed economic fields/);
+    assert.equal((await repo.pendingForVault(vault)).length,1);
+    const stillOne=await pool.query('SELECT batch_id FROM v2_observed_exchange_fills WHERE vault_address=$1',[vault]);
+    assert.equal(stillOne.rows.length,1);
+    assert.equal(stillOne.rows[0].batch_id,firstBatch);
     process.stdout.write('PASS: real PostgreSQL portfolio staging, audited settlement evidence, lease fencing, idempotency and no premature journal advancement\n');
   }finally{
     try{
       // Only a randomly generated test vault; no arbitrary table truncation.
+      await pool.query('DELETE FROM v2_observed_exchange_fills WHERE vault_address=$1',[vault]);
       await pool.query('DELETE FROM v2_settlement_audits WHERE vault_address=$1',[vault]);
       await pool.query('DELETE FROM v2_portfolio_batches WHERE vault_address=$1',[vault]);
       await pool.query('DELETE FROM v2_vault_writer_leases WHERE vault_address=$1',[vault]);
