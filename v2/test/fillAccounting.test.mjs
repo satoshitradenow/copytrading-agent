@@ -20,7 +20,9 @@ test('two partial fills sum 14-decimal notional, signed PnL and USDC fees exactl
  assert.equal(r.observedFeeUsd,'0.76');
  assert.equal(r.observedClosedPnlUsd,'2.5');
  assert.equal(r.observedBuilderFeeUsdSeparate,'0.1');
- assert.equal(r.builderFeeIncludedInFeeTotal,'UNVERIFIED');
+ assert.equal(r.builderFeeIncludedInFeeTotal,'YES_PER_HYPERLIQUID_API_DOCS');
+ assert.equal(r.feeIncludesBuilderFee,true);
+ assert.equal(r.observedClosedPnlNetOfFillFeesUsd,'1.74');
  assert.equal(r.historyComplete,false);
  assert.equal(r.commitAuthorized,false);
  assert.equal(r.executeAuthorized,false);
@@ -87,4 +89,16 @@ test('no observed fills means no proof of execution or safe retransmission',()=>
  assert.equal(r.remainingUnverifiedSize,'0.02');
  assert.equal(r.historyComplete,false);
  assert.equal(r.requiresOperatorReview,true);
+});
+
+test('Hyperliquid inclusive builderFee is not added again to observed total fees',()=>{
+ const r=run([fill('42','0.01',{fee:'0.5',builderFee:'0.2',closedPnl:'2'})]);
+ assert.equal(r.observedFeeUsd,'0.5');
+ assert.equal(r.observedBuilderFeeUsdSeparate,'0.2');
+ assert.equal(r.observedClosedPnlNetOfFillFeesUsd,'1.5');
+ assert.equal(r.feeIncludesBuilderFee,true);
+});
+test('exchange order IDs beyond u64 are rejected without rounding',()=>{
+ assert.throws(()=>run([fill('18446744073709551616','0.005')]),/Unsafe/);
+ assert.throws(()=>run([fill(1,'0.005')],{exchangeOrderId:'18446744073709551616'}),/Unsafe/);
 });
