@@ -149,3 +149,11 @@ test('reversal open status must follow the close-leg vault snapshot',()=>{
  assert.equal(o.classification,'REQUIRES_RECONCILIATION');
  assert.ok(o.legAudits[1].reasons.includes('ORDER_STATUS_PRECEDES_PREVIOUS_SNAPSHOT'));
 });
+
+test('terminal order status timestamp before a matched fill is NOT settlement evidence',()=>{
+ const p=staged(),r=proof(p.intents[0],{statusAt:100_700,snapshotAt:101_000});
+ const o=audit(p,[r]);
+ assert.equal(o.classification,'REQUIRES_RECONCILIATION');
+ assert.ok(o.legAudits[0].reasons.includes('ORDER_STATUS_PRECEDES_OBSERVED_FILL'));
+ assert.equal(o.commitAuthorized,false);
+});
