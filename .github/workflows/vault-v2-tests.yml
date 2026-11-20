@@ -1,0 +1,74 @@
+name: Vault v2 shadow-only tests
+on:
+  push:
+    branches: [vault-v2-design-20261119, vault-upstream-clean-20261120]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/vault-v2-tests.yml'
+  pull_request:
+    paths:
+      - 'v2/**'
+jobs:
+  original-upstream-core-build:
+    # Build the EXISTING upstream TypeScript copier; NEVER start its runtime.
+    # This protects integration against breaking the code we already own.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies without lifecycle scripts
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Compile original TypeScript application (no secrets, no exchange)
+        run: npm run build
+  test-shadow-only:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+        working-directory: v2
+  test-postgres-isolated:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: vault_copy_v2_test
+          POSTGRES_USER: vault_test
+          POSTGRES_PASSWORD: ephemeral_ci_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vault_test -d vault_copy_v2_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+        working-directory: v2
+      - name: Exercise real PostgreSQL fenced intents and recovery
+        run: npm run test:postgres
+        working-directory: v2
+        env:
+          V2_INTEGRATION_CONFIRM: YES_ISOLATED_TEST_DATABASE
+          V2_INTEGRATION_DATABASE_URL: postgresql://vault_test:ephemeral_ci_only@127.0.0.1:5432/vault_copy_v2_test
+      - name: Verify real PostgreSQL portfolio batch fencing and uniqueness
+        run: npm run test:postgres:portfolio
+        working-directory: v2
+        env:
+          V2_INTEGRATION_CONFIRM: YES_ISOLATED_TEST_DATABASE
+          V2_INTEGRATION_DATABASE_URL: postgresql://vault_test:ephemeral_ci_only@127.0.0.1:5432/vault_copy_v2_test

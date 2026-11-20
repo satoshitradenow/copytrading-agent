@@ -1,0 +1,22 @@
+{
+  "name": "hyperliquid-vault-copy-shadow-v2",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "shadow": "node src/shadow.mjs",
+    "inspect": "node src/inspect.mjs",
+    "capture": "node src/capture.mjs",
+    "watch": "node src/watch.mjs",
+    "watch:pg": "node src/watchPg.mjs",
+    "test:postgres": "node integration/leasePostgres.mjs",
+    "test:postgres:portfolio": "node integration/portfolioPostgres.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}
