@@ -1,7 +1,7 @@
 name: Vault v2 shadow-only tests
 on:
   push:
-    branches: [vault-v2-design-20261119, vault-upstream-clean-20261120]
+    branches: [vault-v2-design-20261119, vault-upstream-clean-20261120, vault-upstream-integration-20261120]
     paths:
       - 'v2/**'
       - '.github/workflows/vault-v2-tests.yml'
@@ -24,6 +24,8 @@ jobs:
         run: npm install --ignore-scripts --no-audit --no-fund
       - name: Compile original TypeScript application (no secrets, no exchange)
         run: npm run build
+      - name: Guard against order-generating idle polling
+        run: node --test root-tests/*.test.mjs
   test-shadow-only:
     runs-on: ubuntu-latest
     permissions:

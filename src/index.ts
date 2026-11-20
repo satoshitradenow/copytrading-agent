@@ -12,7 +12,6 @@
  * - Support for both direct wallet trading and vault delegation
  */
 
-import { setTimeout as delay } from "node:timers/promises";
 import * as dotenv from "dotenv";
 import { loadConfig } from "./config/index.js";
 import { createHyperliquidClients } from "./clients/hyperliquid.js";
@@ -85,20 +84,14 @@ async function main() {
     // Start periodic reconciliation loop
     reconciler.start();
 
-    /**
-     * Background polling loop to periodically sync follower with leader.
-     * This provides a fallback in case WebSocket events are missed.
-     */
-    const pollLoop = async () => {
-      while (true) {
-        await tradeExecutor.syncWithLeader().catch((error) => {
-          logger.error("Periodic sync failed", { error });
-        });
-        await delay(config.refreshAccountIntervalMs);
-      }
-    };
-
-    void pollLoop();
+    // IMPORTANT: idle/account polling is READ-ONLY. The original loop called
+    // syncWithLeader() without any new source fill and placed fee-generating
+    // position-correction orders as marks/equity changed.
+    // Missed WebSocket fills must be recovered from a durable source-fill
+    // history cursor; never "repair" them by inventing target-sync orders.
+    // Real-money operation is still blocked pending durable event dedup,
+    // per-fill audit, position accounting, and separately approved testnet
+    // integration. This isolated branch MUST NOT be deployed as-is.
 
     /**
      * Graceful shutdown handler for SIGINT/SIGTERM signals.
